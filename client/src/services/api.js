@@ -1,4 +1,9 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// API_URL - use environment variable or default
+// In development with Vite proxy, use /api (proxy will forward to http://localhost:5000)
+// In production, use full URL from env or fall back to localhost
+const API_URL = import.meta.env.VITE_API_URL 
+  ? import.meta.env.VITE_API_URL
+  : (import.meta.env.MODE === 'development' ? '/api' : 'http://localhost:5000');
 
 const getHeaders = () => {
   const token = localStorage.getItem('token');

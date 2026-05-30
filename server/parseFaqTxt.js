@@ -13,8 +13,43 @@
 const fs = require('fs');
 const path = require('path');
 
-function parseFAQtxt() {
-  const raw = fs.readFileSync(path.join(__dirname, '../../FAQ.txt'), 'utf8');
+function parseFAQtxt(faqPath) {
+  // Determine FAQ.txt path with clear defaults and fallbacks
+  let resolvedPath;
+
+  if (faqPath) {
+    // Explicit path provided (for testing or override)
+    resolvedPath = faqPath;
+  } else if (process.env.FAQ_TXT_PATH) {
+    // Environment variable takes precedence
+    resolvedPath = process.env.FAQ_TXT_PATH;
+  } else {
+    // Default: look in project root (where package.json is)
+    resolvedPath = path.join(__dirname, '../FAQ.txt');
+  }
+
+  // Resolve to absolute path for clarity in error messages
+  const absolutePath = path.resolve(resolvedPath);
+
+  // Validate file exists with clear error message
+  if (!fs.existsSync(absolutePath)) {
+    const errorMsg = [
+      `\n❌ FAQ.txt not found at: ${absolutePath}`,
+      `\n📍 Expected locations (in order of priority):`,
+      `   1. Environment variable: FAQ_TXT_PATH=${process.env.FAQ_TXT_PATH || '(not set)'}`,
+      `   2. Project root (default): ${path.join(__dirname, '../FAQ.txt')}`,
+      `   3. Custom path: pass path to parseFAQtxt(path)`,
+      `\n📋 To fix:`,
+      `   - Place FAQ.txt in the project root (cs16/FAQ.txt)`,
+      `   - Or set FAQ_TXT_PATH environment variable to the correct path`,
+      `\n📚 Example:`,
+      `   export FAQ_TXT_PATH=/path/to/FAQ.txt`,
+      `   npm run seed`,
+    ].join('\n');
+    throw new Error(errorMsg);
+  }
+
+  const raw = fs.readFileSync(absolutePath, 'utf8');
 
   // ── 1. Split TOC from QA ────────────────────────────────────────────────────
   // The separator is a long line of "=" and "QA" repeated
