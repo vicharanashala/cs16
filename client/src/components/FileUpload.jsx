@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useMemo } from 'react';
 
 // ─── Allowed file types & limits ────────────────────────────────────────────
 const ALLOWED_MIME_TYPES = [
@@ -46,6 +46,21 @@ export default function FileUpload({ files = [], onChange, maxFiles = MAX_FILES,
   const inputRef = useRef(null);
   const [error, setError] = useState('');
   const [dragOver, setDragOver] = useState(false);
+
+  // Generate stable object URLs for image previews and revoke them when files change
+  const previewUrls = useMemo(() => {
+    return files.map(file =>
+      file.type.startsWith('image/') ? URL.createObjectURL(file) : null
+    );
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [files]);
+
+  // Revoke object URLs on cleanup to avoid memory leaks
+  useEffect(() => {
+    return () => {
+      previewUrls.forEach(url => { if (url) URL.revokeObjectURL(url); });
+    };
+  }, [previewUrls]);
 
   // ── Validation ─────────────────────────────────────────────────────────────
   /**
@@ -203,17 +218,16 @@ export default function FileUpload({ files = [], onChange, maxFiles = MAX_FILES,
       {files.length > 0 && (
         <ul className="mt-3 space-y-2" aria-label="Selected files">
           {files.map((file, idx) => {
-            const badge = getFileTypeBadge(file);
             const isImage = file.type.startsWith('image/');
-            // Create an object URL for image previews (revoked on unmount by browser GC)
-            const previewUrl = isImage ? URL.createObjectURL(file) : null;
+            const previewUrl = previewUrls[idx]; // stable URL from useMemo
+            const badge = getFileTypeBadge(file);
 
             return (
               <li
                 key={`${file.name}-${file.size}-${idx}`}
                 className="flex items-center gap-3 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 group"
               >
-                {/* Thumbnail or type badge */}
+                {/* Image thumbnail OR file-type badge */}
                 {isImage && previewUrl ? (
                   <img
                     src={previewUrl}
