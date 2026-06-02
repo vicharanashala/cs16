@@ -5,6 +5,13 @@ node_modules/
 dist/
 .cache/
 
+# Vite dependency cache (auto-generated, not source)
+client/node_modules/
+
+# Uploaded files (runtime artifacts, not source)
+server/uploads/*
+!server/uploads/.gitkeep
+
 issues.md
 server/data/
 RAG_INFERENCE_EXPERIMENTS.md
