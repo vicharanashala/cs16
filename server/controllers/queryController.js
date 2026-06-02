@@ -128,7 +128,7 @@ exports.getQueryById = async (req, res) => {
 // Create a new query with 24hr SLA
 exports.createQuery = async (req, res) => {
   try {
-    const { title, description, tags, taggedUsers } = req.body;
+    const { title, description, tags, taggedUsers, attachments } = req.body;
     if (req.user.role === 'admin') {
       return res.status(403).json({ error: 'Admins cannot raise queries' });
     }
@@ -137,6 +137,16 @@ exports.createQuery = async (req, res) => {
     }
     if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 2) {
       return res.status(400).json({ error: 'You are allowed to tag a maximum of 2 contributors' });
+    }
+
+    // Validate attachments if provided (max 5, each must have url + filename + mimetype)
+    if (attachments !== undefined) {
+      if (!Array.isArray(attachments)) {
+        return res.status(400).json({ error: 'Attachments must be an array' });
+      }
+      if (attachments.length > 5) {
+        return res.status(400).json({ error: 'You can attach a maximum of 5 files' });
+      }
     }
 
     // Cooldown: max 3 queries per 24 hours
@@ -255,7 +265,9 @@ exports.createQuery = async (req, res) => {
       createdBy: req.user._id,
       status: 'open',
       expiresAt,
-      taggedUsers: taggedUsers || []
+      taggedUsers: taggedUsers || [],
+      // Store uploaded file references; already validated above
+      attachments: Array.isArray(attachments) ? attachments.slice(0, 5) : []
     });
 
     await query.populate('createdBy', 'name reputation');

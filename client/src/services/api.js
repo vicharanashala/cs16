@@ -174,6 +174,13 @@ export const uploadImage = (file) => {
   return api.post('/api/upload', form);
 };
 
+// Upload any supported file (image / PDF / DOC / DOCX) — returns { url, filename, mimetype }
+export const uploadFile = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/api/upload', form);
+};
+
 // Admin pins
 export const getAdminPins = () => api.get('/api/admin/pins');
 export const createPin = (data) => api.post('/api/admin/pins', data);

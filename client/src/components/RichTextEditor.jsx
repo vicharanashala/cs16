@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { marked } from 'marked';
-import { uploadImage } from '../services/api';
 
 marked.setOptions({ breaks: true, gfm: true });
 
@@ -12,9 +11,9 @@ export function MarkdownContent({ content }) {
 
   return (
     <>
-      <div 
+      <div
         className="prose dark:prose-invert max-w-none text-slate-800 dark:text-slate-200"
-        dangerouslySetInnerHTML={{ __html: html }} 
+        dangerouslySetInnerHTML={{ __html: html }}
         onClick={(e) => {
           if (e.target.tagName === 'IMG') {
             e.preventDefault();
@@ -25,18 +24,18 @@ export function MarkdownContent({ content }) {
       />
 
       {activeImgUrl && (
-        <div 
+        <div
           className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm cursor-zoom-out animate-fade-in"
           onClick={() => setActiveImgUrl(null)}
         >
           <div className="relative max-w-4xl max-h-[90vh] flex flex-col items-center">
-            <img 
-              src={activeImgUrl} 
-              alt="Preview" 
+            <img
+              src={activeImgUrl}
+              alt="Preview"
               className="max-w-full max-h-[85vh] rounded-xl shadow-2xl border border-white/10 object-contain select-none animate-zoom-in"
               onClick={(e) => e.stopPropagation()}
             />
-            <button 
+            <button
               className="absolute top-4 right-4 bg-black/60 hover:bg-black/85 text-white/80 hover:text-white rounded-full p-2 transition-colors border border-white/10"
               onClick={() => setActiveImgUrl(null)}
               title="Close Preview"
@@ -54,8 +53,6 @@ export function MarkdownContent({ content }) {
 
 export default function RichTextEditor({ value, onChange, placeholder, readOnly = false }) {
   const textareaRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
 
   const insertWrap = (before, after = before) => {
     const ta = textareaRef.current;
@@ -72,35 +69,6 @@ export default function RichTextEditor({ value, onChange, placeholder, readOnly 
     });
   };
 
-  const insertAtCursor = (text) => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const start = ta.selectionStart;
-    const end = ta.selectionEnd;
-    const newText = value.substring(0, start) + text + value.substring(end);
-    onChange(newText);
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.setSelectionRange(start + text.length, start + text.length);
-    });
-  };
-
-  const handleImageUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const res = await uploadImage(file);
-      const url = res.data.url;
-      insertAtCursor(`\n![${file.name}](${url})\n`);
-    } catch (err) {
-      console.error('Image upload failed:', err);
-    } finally {
-      setUploading(false);
-      e.target.value = '';
-    }
-  };
-
   const toolbarButtons = [
     { label: 'B', title: 'Bold', wrap: ['**', '**'], className: 'font-bold' },
     { label: 'I', title: 'Italic', wrap: ['*', '*'], className: 'italic' },
@@ -114,7 +82,7 @@ export default function RichTextEditor({ value, onChange, placeholder, readOnly 
 
   return (
     <div className="border border-slate-300 dark:border-slate-600 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-primary-200 focus-within:border-primary-400 transition-all">
-      {/* Toolbar */}
+      {/* Toolbar — text formatting only; file uploads handled by the dedicated Attach Files section */}
       <div className="flex items-center gap-1 px-2 py-1.5 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-600">
         {toolbarButtons.map((btn) => (
           <button
@@ -128,26 +96,6 @@ export default function RichTextEditor({ value, onChange, placeholder, readOnly 
           </button>
         ))}
 
-        <div className="w-px h-5 bg-slate-300 dark:bg-slate-600 mx-1" />
-
-        {/* Image upload button */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp"
-          className="hidden"
-          onChange={handleImageUpload}
-        />
-        <button
-          type="button"
-          title="Add image"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className={`w-7 h-7 flex items-center justify-center rounded text-sm text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 hover:text-slate-900 dark:hover:text-slate-200 transition-colors ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          {uploading ? '…' : '📷'}
-        </button>
-
         <div className="flex-1" />
         <span className="text-xs text-slate-400 dark:text-slate-500">Markdown enabled</span>
       </div>
@@ -158,7 +106,7 @@ export default function RichTextEditor({ value, onChange, placeholder, readOnly 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        rows={5-20}
+        rows={5}
         className="w-full px-3 py-2.5 text-sm resize-none focus:outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 leading-relaxed"
         style={{ minHeight: '120px' }}
       />

@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { createQuery, searchSimilar, detectTags, getCategoryContributors } from '../services/api';
+import { createQuery, searchSimilar, detectTags, getCategoryContributors, uploadFile } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import RichTextEditor from '../components/RichTextEditor';
 import TagInput from '../components/TagInput';
+import FileUpload from '../components/FileUpload';
 
 const MAX_TAGS = 3;
 
@@ -15,6 +16,9 @@ function RaiseQueryPage() {
   const [error, setError] = useState('');
   const [suggestedContributors, setSuggestedContributors] = useState([]);
   const [taggedUsers, setTaggedUsers] = useState([]);
+
+  // ── Attached files (File objects held locally until submit) ───────────────
+  const [attachedFiles, setAttachedFiles] = useState([]);
 
   const [similarFAQs, setSimilarFAQs] = useState([]);
   const [similarQueries, setSimilarQueries] = useState([]);
@@ -57,7 +61,6 @@ function RaiseQueryPage() {
         setSimilarQueries(data.queries || []);
         setResolvedQueries(data.resolvedQueries || []);
         setIsInScope(data.isInScope !== undefined ? data.isInScope : true);
-        // If this query closely matches a resolved query, pre-fill the duplicate panel
         if (data.highConfidenceDuplicate && !highConfidenceDuplicate) {
           setHighConfidenceDuplicate(data.highConfidenceDuplicate);
           setDuplicateType('query');
@@ -70,7 +73,7 @@ function RaiseQueryPage() {
     return () => clearTimeout(searchTimerRef.current);
   }, [form.title]);
 
-  // ── Tag auto-detection — fires 1s after typing pauses ──────────────────
+  // ── Tag auto-detection — fires 1s after typing pauses ──────────────────────
   useEffect(() => {
     clearTimeout(tagTimerRef.current);
     if (!form.title.trim() && !form.description.trim()) return;
@@ -96,7 +99,7 @@ function RaiseQueryPage() {
     return () => clearTimeout(tagTimerRef.current);
   }, [form.title, form.description]);
 
-  // ── Fetch active category responders ────────────────────────────────
+  // ── Fetch active category responders ──────────────────────────────────────
   useEffect(() => {
     const primaryTag = tags[0];
     if (!primaryTag) {
@@ -142,6 +145,7 @@ function RaiseQueryPage() {
     }
   };
 
+  // ── Submit ─────────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
@@ -154,12 +158,26 @@ function RaiseQueryPage() {
 
     try {
       setSubmitting(true);
+
+      // Upload each attached file sequentially and collect server-side references
+      const uploadedAttachments = [];
+      for (const file of attachedFiles) {
+        const res = await uploadFile(file);
+        uploadedAttachments.push({
+          url:      res.data.url,
+          filename: res.data.filename,
+          mimetype: res.data.mimetype
+        });
+      }
+
       const res = await createQuery({
         title: form.title.trim(),
         description: form.description.trim(),
         tags,
-        taggedUsers
+        taggedUsers,
+        attachments: uploadedAttachments
       });
+
       navigate(`/community?highlight=${res.data.query._id}`);
     } catch (err) {
       const data = err.response?.data;
@@ -219,8 +237,10 @@ function RaiseQueryPage() {
             ⚠️ Your question may be outside the platform's scope
           </p>
           <p className="text-amber-700 dark:text-amber-300 text-xs">
-            This platform is for questions about <strong>Grantha</strong> — VINS, ViBe LMS, Phase 1/2/3, NOC, offer letters, Rosetta, team formation, and related topics.{' '}
-            If your question is about something else (college exams, other programmes, off-topic), it may not get a relevant answer here.
+            This platform is for questions about <strong>Grantha</strong> — VINS, ViBe LMS, Phase 1/2/3, NOC,
+            offer letters, Rosetta, team formation, and related topics.{' '}
+            If your question is about something else (college exams, other programmes, off-topic), it may not
+            get a relevant answer here.
           </p>
         </div>
       )}
@@ -363,6 +383,20 @@ function RaiseQueryPage() {
           />
         </div>
 
+        {/* ── Attach Files ──────────────────────────────────────────────────── */}
+        <div>
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+            Attach Files
+            <span className="text-xs font-normal text-slate-400 ml-1.5">(optional)</span>
+          </label>
+          <FileUpload
+            files={attachedFiles}
+            onChange={setAttachedFiles}
+            disabled={submitting}
+          />
+        </div>
+
+        {/* Suggested contributors */}
         {suggestedContributors.length > 0 && (
           <div className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 mt-3">
             <div className="flex items-center justify-between mb-3">
@@ -416,11 +450,7 @@ function RaiseQueryPage() {
               <span className="text-xs text-indigo-400 animate-pulse">detecting tags…</span>
             )}
           </div>
-          <TagInput
-            tags={tags}
-            onChange={setTags}
-            maxTags={MAX_TAGS}
-          />
+          <TagInput tags={tags} onChange={setTags} maxTags={MAX_TAGS} />
           <p className="text-xs text-slate-400 mt-1">
             Tags are auto-suggested as you type. You can edit them freely.
           </p>
@@ -433,7 +463,11 @@ function RaiseQueryPage() {
             disabled={submitting || !form.title.trim() || !form.description.trim()}
             className="btn-primary px-6 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {submitting ? 'Submitting…' : 'Submit Query'}
+            {submitting
+              ? attachedFiles.length > 0
+                ? 'Uploading & Submitting…'
+                : 'Submitting…'
+              : 'Submit Query'}
           </button>
           <button type="button" onClick={() => navigate(-1)} className="btn-ghost text-slate-500">
             Cancel
