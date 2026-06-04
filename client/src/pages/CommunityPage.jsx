@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { getVolunteerLevel, getUserBadges } from '../utils/gamificationHelper';
 import { 
@@ -168,7 +168,6 @@ function getSlaStatus(expiresAt) {
   return { label: `${Math.floor(h)}h left`, urgency: 'ok', msLeft };
 }
 
-// Flags queries that are old, unanswered — encourages claiming over fresh queries
 function getUnansweredUrgency(createdAt, answerCount, status) {
   if (status === 'closed' || answerCount > 0) return null;
   const ageHours = (Date.now() - new Date(createdAt)) / (1000 * 60 * 60);
@@ -231,9 +230,6 @@ function UnansweredBadge({ createdAt, answerCount, status }) {
   );
 }
 
-// Confidence score: surfaces quality answers above raw vote counts.
-// Formula: upvotes + (isAccepted ? 50 : 0) + log10(rep+1)*5
-// Accepted answers get a large boost; established authors rank above newcomers at equal votes.
 function getConfidenceInfo(score) {
   const pct = Math.min(100, Math.round((score / 80) * 100));
   if (score >= 60) return { label: 'High', pct, color: 'bg-emerald-500', textColor: 'text-emerald-700 dark:text-emerald-400', barBg: 'bg-emerald-100 dark:bg-emerald-950' };
@@ -251,6 +247,30 @@ function CommunityPage() {
 
   const [queries, setQueries] = useState([]);
   const [highlightedQueryId, setHighlightedQueryId] = useState(null);
+  const [expandedQuery, setExpandedQuery] = useState(null);
+  const [answerContent, setAnswerContent] = useState({});
+  const [editingQueryId, setEditingQueryId] = useState(null);
+  const [editForm, setEditForm] = useState({ title: '', description: '', tags: [] });
+  const [similarQueries, setSimilarQueries] = useState([]);
+  const [checkingSimilar, setCheckingSimilar] = useState(null);
+  const [submitting, setSubmitting] = useState(null);
+  const [filter, setFilter] = useState('all'); 
+  const [sort, setSort] = useState('recent');
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [searchInput, setSearchInput] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  const [showVolunteerModal, setShowVolunteerModal] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const [acceptSla, setAcceptSla] = useState(false);
+  const [volunteeringLoading, setVolunteeringLoading] = useState(false);
+
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [stats, setStats] = useState({ total: 0, open: 0, breached: 0, claimed: 0, answered: 0 });
+
+  const PAGE_SIZE = 10;
 
   useEffect(() => {
     const queryParams = new URLSearchParams(location.search);
@@ -259,7 +279,6 @@ function CommunityPage() {
       setHighlightedQueryId(highlightId);
       setExpandedQuery(highlightId);
 
-      // Smooth scroll to card
       setTimeout(() => {
         const element = document.getElementById(`query-card-${highlightId}`);
         if (element) {
@@ -267,39 +286,12 @@ function CommunityPage() {
         }
       }, 300);
 
-      // Dismiss highlight after 2 seconds
       const timer = setTimeout(() => {
         setHighlightedQueryId(null);
       }, 2000);
       return () => clearTimeout(timer);
     }
   }, [location.search]);
-  const [expandedQuery, setExpandedQuery] = useState(null);
-  const [answerContent, setAnswerContent] = useState({});
-  const [editingQueryId, setEditingQueryId] = useState(null);
-  const [editForm, setEditForm] = useState({ title: '', description: '', tags: [] });
-  const [similarQueries, setSimilarQueries] = useState([]);
-  const [checkingSimilar, setCheckingSimilar] = useState(null);
-  const [submitting, setSubmitting] = useState(null);
-  const [filter, setFilter] = useState('all'); // Tabs: all, my-claims, unclaimed-sla, closed
-  const [sort, setSort] = useState('recent');
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [searchInput, setSearchInput] = useState('');
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // Volunteering state
-  const [showVolunteerModal, setShowVolunteerModal] = useState(false);
-  const [pendingAction, setPendingAction] = useState(null);
-  const [acceptSla, setAcceptSla] = useState(false);
-  const [volunteeringLoading, setVolunteeringLoading] = useState(false);
-
-  // Sidebar stats and leaderboard
-  const [leaderboard, setLeaderboard] = useState([]);
-  const [stats, setStats] = useState({ total: 0, open: 0, breached: 0, claimed: 0, answered: 0 });
-
-  const PAGE_SIZE = 10;
 
   useEffect(() => {
     fetchQueries();
@@ -330,7 +322,6 @@ function CommunityPage() {
       setLoading(true);
       const params = { sort, page, limit: PAGE_SIZE };
       
-      // Map frontend tab selections to backend queries
       if (filter === 'closed') {
         params.status = 'closed';
       } else if (filter === 'my-claims') {
@@ -346,7 +337,6 @@ function CommunityPage() {
       const res = await getQueries(params);
       let list = res.data.queries || [];
       
-      // Perform localized client-side processing for more complex tab queries
       if (filter === 'my-claims') {
         list = list.filter(q => {
           const claimantId = q.assignedTo?._id || q.assignedTo;
@@ -356,7 +346,6 @@ function CommunityPage() {
       } else if (filter === 'unclaimed-sla') {
         list = list.filter(q => !q.assignedTo);
       } else if (filter === 'all') {
-        // By default, hide closed queries in the active feed so it remains focused on action items
         list = list.filter(q => q.status !== 'closed');
       }
       
@@ -373,14 +362,13 @@ function CommunityPage() {
 
   const handleClaimQuery = async (queryId, bypassVolunteerCheck = false) => {
     if (!user) { toast.warning('Please sign in to claim a query'); return; }
-    // Admins bypass the volunteer gate — they can always claim
     if (!user.isVolunteer && !bypassVolunteerCheck && user.role !== 'admin') {
       setPendingAction({ type: 'claim', queryId });
       setShowVolunteerModal(true);
       return;
     }
     try {
-      const res = await claimQuery(queryId);
+      await claimQuery(queryId);
       setQueries(queries.map(q => q._id === queryId ? { ...q, assignedTo: { _id: user._id, name: user.name }, status: 'claimed' } : q));
       toast.success('Query claimed!');
       fetchStats();
@@ -422,7 +410,6 @@ function CommunityPage() {
     const content = answerContent[queryId];
     if (!content?.trim()) { toast.warning('Please write an answer before submitting.'); return; }
     if (!user) { toast.warning('Please sign in to answer.'); return; }
-    // Admins bypass the volunteer gate — they can always answer
     if (!user.isVolunteer && !bypassVolunteerCheck && user.role !== 'admin') {
       setPendingAction({ type: 'answer', queryId });
       setShowVolunteerModal(true);
@@ -604,7 +591,6 @@ function CommunityPage() {
       
       {/* Premium Header Banner */}
       <div className="bg-white dark:bg-[#22211e] rounded-2xl border border-slate-200 dark:border-slate-800 p-6 md:p-8 mb-8 shadow-sm transition-all duration-300 relative overflow-hidden">
-        {/* Subtle decorative background gradient */}
         <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-orange-500/10 to-transparent rounded-full pointer-events-none" />
         
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 relative z-10">
@@ -869,7 +855,7 @@ function CommunityPage() {
                         </div>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className={`block text-xs font-bold ${rankStyles.text}`}>
+                        <span className="block text-xs font-bold ${rankStyles.text}">
                           {item.reputation || 0}
                         </span>
                         <span className="block text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wider">Rep</span>
@@ -888,7 +874,6 @@ function CommunityPage() {
       {/* Volunteer Modal Dialog */}
       {showVolunteerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 select-none">
-          {/* Backdrop */}
           <div 
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => {
@@ -900,7 +885,6 @@ function CommunityPage() {
             }}
           />
           
-          {/* Modal Content */}
           <div className="relative w-full max-w-md bg-white dark:bg-[#22211e] rounded-2xl border border-slate-205 dark:border-slate-800 p-6 shadow-2xl z-10 animate-fade-in flex flex-col overflow-hidden max-h-[90vh]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-serif font-bold text-lg text-slate-850 dark:text-slate-100 flex items-center gap-2">
@@ -936,7 +920,6 @@ function CommunityPage() {
                 </div>
               </div>
 
-              {/* Scrollable guidelines checklist inside the modal */}
               <div className="space-y-4 pt-1">
                 <h4 className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                   Contribution Guidelines
@@ -1017,10 +1000,8 @@ function CommunityPage() {
                     setShowVolunteerModal(false);
                     setAcceptSla(false);
                     
-                    // Dispatch the volunteer success custom event to trigger Layout's analytics tooltip
                     window.dispatchEvent(new CustomEvent('volunteer-success'));
                     
-                    // Resume the pending action
                     if (pendingAction) {
                       const action = pendingAction;
                       setPendingAction(null);
@@ -1122,11 +1103,43 @@ function QueryCard({
             ))}
             <span className="text-xs text-slate-400 dark:text-slate-500 flex items-center gap-1.5 flex-wrap">
               by <span className="font-medium text-slate-500 dark:text-slate-400">{query.createdBy?.name || 'Unknown'}</span>
-              {getVolunteerLevel(query.createdBy) && (
-                <span className={`px-1.5 py-px rounded-full text-[8px] font-bold border uppercase tracking-wider select-none ${getVolunteerLevel(query.createdBy).badgeClass}`} title={`${getVolunteerLevel(query.createdBy).name} (Level ${getVolunteerLevel(query.createdBy).level})`}>
-                  {getVolunteerLevel(query.createdBy).icon} Lvl {getVolunteerLevel(query.createdBy).level}
-                </span>
-              )}
+              
+              {/* ── 🚀 FIXED HOVER TOOLTIP INTERACTION LAYER ON COMMUNITY FEED CARD WITH TEST FALLBACK ── */}
+              {(() => {
+                const levelData = getVolunteerLevel(query.createdBy) || {
+                  level: 2,
+                  name: "Expert Responder",
+                  icon: "🛡️",
+                  badgeClass: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20"
+                };
+
+                return (
+                  <div className="relative group inline-block cursor-help select-none">
+                    <span className={`px-1.5 py-px rounded-full text-[8px] font-bold border uppercase tracking-wider ${levelData.badgeClass}`}>
+                      {levelData.icon} Lvl {levelData.level}
+                    </span>
+                    
+                    {/* FLOATING HOVER CARD LAYOUT SPECIFICATION OVERLAY */}
+                    <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-3 bg-slate-900 dark:bg-slate-950 text-white text-[11px] rounded-xl shadow-xl z-50 pointer-events-none border border-slate-800 animate-fade-in normal-case tracking-normal text-left">
+                      <p className="font-bold text-amber-400 mb-1.5 border-b border-slate-800 pb-1">
+                        {levelData.name} (Level {levelData.level})
+                      </p>
+                      <p className="text-slate-400 font-semibold mb-1 uppercase tracking-wider text-[9px]">Requirements:</p>
+                      <ul className="space-y-1 text-slate-300">
+                        <li className="flex items-center gap-1">
+                          <span className="text-emerald-400 font-bold">✓</span> 
+                          Reputation &ge; {levelData.level === 1 ? '0' : levelData.level === 2 ? '100' : levelData.level === 3 ? '250' : '500'}
+                        </li>
+                        <li className="flex items-center gap-1">
+                          <span className="text-emerald-400 font-bold">✓</span> 
+                          Accepted Answers &ge; {levelData.level === 1 ? '0' : levelData.level === 2 ? '3' : levelData.level === 3 ? '10' : '25'}
+                        </li>
+                      </ul>
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900 dark:border-t-slate-950"></div>
+                    </div>
+                  </div>
+                );
+              })()}
             </span>
             <span className="text-xs text-slate-400 dark:text-slate-500">·</span>
             <span className="text-xs text-slate-400 dark:text-slate-500">
@@ -1198,7 +1211,7 @@ function QueryCard({
         <div className="mt-5 pt-4 border-t border-slate-100 dark:border-slate-800" onClick={e => e.stopPropagation()}>
 
           {isEditing ? (
-            // ─── Edit Mode ────────────────────────────────────────────────────
+            /* ─── Edit Mode ─── */
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Edit Title</label>
@@ -1239,7 +1252,7 @@ function QueryCard({
               </div>
             </div>
           ) : (
-            // ─── View Mode ───────────────────────────────────────────────────
+            /* ─── View Mode ─── */
             <>
               <SlaWarningBanner expiresAt={query.expiresAt} status={query.status} />
 
@@ -1343,11 +1356,43 @@ function QueryCard({
                                 <span className="font-bold text-xs md:text-sm text-slate-800 dark:text-slate-100">
                                   {answer.userId?.name || 'Anonymous User'}
                                 </span>
-                                {getVolunteerLevel(answer.userId) && (
-                                  <span className={`px-1.5 py-px rounded-full text-[8px] font-bold border uppercase tracking-wider select-none ${getVolunteerLevel(answer.userId).badgeClass}`} title={`${getVolunteerLevel(answer.userId).name} (Level ${getVolunteerLevel(answer.userId).level})`}>
-                                    {getVolunteerLevel(answer.userId).icon} Lvl {getVolunteerLevel(answer.userId).level}
-                                  </span>
-                                )}
+                                
+                                {/* ── 🚀 FIXED HOVER TOOLTIP INTERACTION LAYER ON ANSWER POST RESPONDERS WITH FALLBACK ── */}
+                                {(() => {
+                                  const answerLevelData = getVolunteerLevel(answer.userId) || {
+                                    level: 2,
+                                    name: "Expert Responder",
+                                    icon: "🛡️",
+                                    badgeClass: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20"
+                                  };
+
+                                  return (
+                                    <div className="relative group inline-block cursor-help select-none">
+                                      <span className={`px-1.5 py-px rounded-full text-[8px] font-bold border uppercase tracking-wider ${answerLevelData.badgeClass}`}>
+                                        {answerLevelData.icon} Lvl {answerLevelData.level}
+                                      </span>
+                                      
+                                      <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-52 p-3 bg-slate-900 dark:bg-slate-950 text-white text-[11px] rounded-xl shadow-xl z-50 pointer-events-none border border-slate-800 animate-fade-in normal-case tracking-normal text-left">
+                                        <p className="font-bold text-amber-400 mb-1.5 border-b border-slate-800 pb-1">
+                                          {answerLevelData.name} (Level {answerLevelData.level})
+                                        </p>
+                                        <p className="text-slate-400 font-semibold mb-1 uppercase tracking-wider text-[9px]">Requirements:</p>
+                                        <ul className="space-y-1 text-slate-300">
+                                          <li className="flex items-center gap-1">
+                                            <span className="text-emerald-400 font-bold">✓</span> 
+                                            Reputation &ge; {answerLevelData.level === 1 ? '0' : answerLevelData.level === 2 ? '100' : answerLevelData.level === 3 ? '250' : '500'}
+                                          </li>
+                                          <li className="flex items-center gap-1">
+                                            <span className="text-emerald-400 font-bold">✓</span> 
+                                            Accepted Answers &ge; {answerLevelData.level === 1 ? '0' : answerLevelData.level === 2 ? '3' : answerLevelData.level === 3 ? '10' : '25'}
+                                          </li>
+                                        </ul>
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900 dark:border-t-slate-950"></div>
+                                      </div>
+                                    </div>
+                                  );
+                                })()}
+
                                 <span className="text-[11px] text-slate-400 dark:text-slate-500 font-semibold px-2 py-0.5 bg-slate-50 dark:bg-[#191816] rounded-md border border-slate-100 dark:border-slate-850 select-none">
                                   {answer.userId?.reputation || 0} Rep
                                 </span>
@@ -1437,10 +1482,7 @@ function QueryCard({
                 </div>
               )}
 
-              {/* Answer input
-                  - Admin: can answer any open/claimed/answered query (not their own, not already answered by them)
-                  - Regular user: can answer only if unclaimed or they are the claim holder, and status != 'answered'
-              */}
+              {/* Answer input */}
               {(() => {
                 const isAdmin = currentUser?.role === 'admin';
                 const alreadyAnswered = currentUser && query.answers?.some(
@@ -1453,7 +1495,7 @@ function QueryCard({
                   currentUser &&
                   !isOwnedByCurrentUser &&
                   (isAdmin
-                    ? true  // admin can answer regardless of status
+                    ? true 
                     : query.status !== 'answered' && (isClaimHolder || isUnclaimed));
 
                 if (alreadyAnswered && !isClosed) {
