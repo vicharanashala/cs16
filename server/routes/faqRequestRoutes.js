@@ -18,6 +18,7 @@ router.get('/', protect, adminOnly, getFAQRequests);
 router.post('/:id/approve', protect, adminOnly, approveFAQRequest);
 
 // Reject a FAQ request (admin only)
+router.post('/:id/reject', protect, adminOnly, rejectFAQRequest);
 router.delete('/:id/reject', protect, adminOnly, rejectFAQRequest);
 
 module.exports = router;

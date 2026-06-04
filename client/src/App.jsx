@@ -16,6 +16,7 @@ import { ToastProvider } from './components/ToastProvider';
 import WikiTagsPage from './pages/WikiTagsPage';
 import ProfilePage from './pages/ProfilePage';
 import StatsPage from './pages/StatsPage';
+import TrackQueryPage from './pages/TrackQueryPage';
 
 function App() {
   return (
@@ -53,6 +54,11 @@ function App() {
                 <Route path="stats" element={
                   <ProtectedRoute>
                     <StatsPage />
+                  </ProtectedRoute>
+                } />
+                <Route path="track-query" element={
+                  <ProtectedRoute>
+                    <TrackQueryPage />
                   </ProtectedRoute>
                 } />
               </Route>

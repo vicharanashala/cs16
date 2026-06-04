@@ -29,7 +29,7 @@ beforeAll(async () => {
   const Query = require('../models/Query');
   const Answer = require('../models/Answer');
   await Promise.all([
-    User.deleteMany({ email: { $regex: /test-/ } }),
+    User.deleteMany({}),
     Query.deleteMany({}),
     Answer.deleteMany({})
   ]);
@@ -169,6 +169,66 @@ describe('Auth Endpoints', () => {
 
       // After 20 attempts, subsequent requests should get 429
       // Note: this depends on whether previous test runs consumed the limit
+    });
+  });
+
+  describe('Global Rank Calculation', () => {
+    let user1, user2, user3, admin;
+
+    beforeEach(async () => {
+      // Clean up test users
+      await User.deleteMany({ email: { $regex: /rank-test/ } });
+
+      // Create active users with different reputation
+      const registerUser = async (name, email, reputation = 0, role = 'user') => {
+        const res = await request(app)
+          .post('/api/auth/register')
+          .send({ name, email, password: 'password123' });
+        const id = res.body.user.id || res.body.user._id;
+        await User.findByIdAndUpdate(id, { reputation, role, status: 'active' });
+        return { id, token: res.body.token, email };
+      };
+
+      user1 = await registerUser('User One', 'rank-test-1@test.com', 10);
+      user2 = await registerUser('User Two', 'rank-test-2@test.com', 20);
+      user3 = await registerUser('User Three', 'rank-test-3@test.com', 5);
+      admin = await registerUser('Admin User', 'rank-test-admin@test.com', 100, 'admin');
+    });
+
+    afterEach(async () => {
+      await User.deleteMany({ email: { $regex: /rank-test/ } });
+    });
+
+    it('should calculate correct global ranks for users', async () => {
+      // User Two (reputation 20) should be rank 1 (highest user)
+      const loginRes2 = await request(app)
+        .post('/api/auth/login')
+        .send({ email: user2.email, password: 'password123' });
+      expect(loginRes2.status).toBe(200);
+      expect(loginRes2.body.user.rank).toBe(1);
+
+      // User One (reputation 10) should be rank 2
+      const loginRes1 = await request(app)
+        .post('/api/auth/login')
+        .send({ email: user1.email, password: 'password123' });
+      expect(loginRes1.status).toBe(200);
+      expect(loginRes1.body.user.rank).toBe(2);
+
+      // User Three (reputation 5) should be rank 3
+      const getMeRes3 = await request(app)
+        .get('/api/auth/me')
+        .set('x-auth-token', user3.token);
+      expect(getMeRes3.status).toBe(200);
+      expect(getMeRes3.body.rank).toBe(3);
+    });
+
+    it('should not include admins in the rank calculation', async () => {
+      // The admin has reputation 100 but should not be ranked/influence ranks as admin
+      const loginRes2 = await request(app)
+        .post('/api/auth/login')
+        .send({ email: user2.email, password: 'password123' });
+      expect(loginRes2.status).toBe(200);
+      expect(loginRes2.body.user.rank).toBe(1);
     });
   });
 });

@@ -31,6 +31,11 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // Alias for isVerified used by RAG bot and some routes
+  isEmailVerified: {
+    type: Boolean,
+    default: false
+  },
   verificationToken: {
     type: String,
     default: null
@@ -70,7 +75,15 @@ const userSchema = new mongoose.Schema({
   bookmarks: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FAQ'
-  }]
+  }],
+  tokenVersion: {
+    type: Number,
+    default: 0
+  },
+  // Cooldown tracking: timestamps of recent query submissions (last 3)
+  recentQueryTimestamps: [
+    { type: Date }
+  ]
 }, {
   timestamps: true,
   toObject: {

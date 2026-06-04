@@ -9,8 +9,11 @@ const parseFAQtxt = require('./parseFaqTxt');
 
 async function seed(force = false) {
   try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/Grantha');
-    console.log('Connected to MongoDB');
+    // Only connect if not already connected (e.g. when called from server.js)
+    if (mongoose.connection.readyState === 0) {
+      await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/Grantha');
+      console.log('Connected to MongoDB');
+    }
 
     // Guard: require RESET_DB=true to proceed with destructive seed
     if (process.env.RESET_DB !== 'true' && !force) {

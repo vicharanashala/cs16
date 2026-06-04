@@ -7,6 +7,12 @@ const getHeaders = () => {
 
 const handleResponse = async (res) => {
   if (res.status === 204) return res;
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth-unauthorized'));
+    }
+  }
   if (res.status === 429) {
     const msg = '⚡ Request limit reached. Please wait a few moments before trying again.';
     if (typeof window !== 'undefined') {
@@ -66,6 +72,7 @@ export const requestPasswordReset = (email) => api.post('/api/auth/forgot-passwo
 export const forgotPassword = (email) => api.post('/api/auth/forgot-password', { email });
 export const resetPassword = (token, password) => api.post('/api/auth/reset-password', { token, password });
 export const resendVerification = () => api.post('/api/auth/resend-verification', {});
+export const logoutAllDevices = () => api.post('/api/auth/logout-all', {});
 
 // Users
 export const getCurrentUser = () => api.get('/api/auth/me');
@@ -128,14 +135,15 @@ export const voteAnswer = (answerId) => api.post(`/api/answers/${answerId}/vote`
 export const deleteAnswer = (id) => api.delete(`/api/answers/${id}`);
 
 // FAQs
-export const getFAQs = ({ page, pageSize, limit, search, q, tag, category, pinned } = {}) =>
+export const getFAQs = ({ page, pageSize, limit, search, q, tag, category, pinned, sort } = {}) =>
   api.get('/api/faqs', { 
     page, 
     limit: limit || pageSize, 
     q: q || search, 
     tag, 
     category,
-    pinned
+    pinned,
+    sort
   });
 export const getFAQById = (id) => api.get(`/api/faqs/${id}`);
 export const getFAQ = (id) => api.get(`/api/faqs/${id}`);
@@ -150,7 +158,7 @@ export const createFAQRequest = (data) => api.post('/api/faq-requests', data);
 export const getFAQRequests = ({ page = 1, pageSize = 20 } = {}) =>
   api.get('/api/faq-requests', { page, pageSize });
 export const resolveFAQRequest = (id, data = {}) => api.post(`/api/faq-requests/${id}/approve`, data);
-export const rejectFAQRequest = (id) => api.post(`/api/faq-requests/${id}/reject`);
+export const rejectFAQRequest = (id, data = {}) => api.post(`/api/faq-requests/${id}/reject`, data);
 
 // Admin: FAQ management
 // getAdminFaqs maps page/pageSize -> page/limit for the controller
@@ -188,11 +196,19 @@ export const uploadImage = (file) => {
   return api.post('/api/upload', form);
 };
 
+// Upload any supported file (image / PDF / DOC / DOCX) — returns { url, filename, mimetype }
+export const uploadFile = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/api/upload', form);
+};
+
 // Admin pins
 export const getAdminPins = () => api.get('/api/admin/pins');
 export const createPin = (data) => api.post('/api/admin/pins', data);
 export const updatePin = (id, data) => api.patch(`/api/admin/pins/${id}`, data);
 export const deletePin = (id) => api.delete(`/api/admin/pins/${id}`);
+export const getAuditLogs = () => api.get('/api/admin/audit-logs');
 
 // Notifications
 export const getNotifications = () => api.get('/api/notifications');

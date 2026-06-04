@@ -2,6 +2,7 @@ const Query = require('../models/Query');
 const Answer = require('../models/Answer');
 const FAQ = require('../models/FAQ');
 const User = require('../models/User');
+const AuditLog = require('../models/AuditLog');
 
 // 24-hour SLA window in ms
 const SLA_24HR = 24 * 60 * 60 * 1000;
@@ -19,6 +20,10 @@ exports.getQueries = async (req, res) => {
     if (tag) query.tags = tag.toLowerCase();
     if (claimed === 'true') query.assignedTo = { $ne: null };
     if (q) query.$text = { $search: q };
+    if (req.query.createdBy) {
+      const mongoose = require('mongoose');
+      query.createdBy = new mongoose.Types.ObjectId(req.query.createdBy);
+    }
     query.deletedAt = null;
 
     let sortOption = { communityScore: -1, createdAt: -1 };
@@ -39,6 +44,8 @@ exports.getQueries = async (req, res) => {
       { $lookup: { from: 'users', localField: 'assignedTo', foreignField: '_id', as: 'assignedToArr' } },
       { $addFields: { assignedTo: { $arrayElemAt: ['$assignedToArr', 0] } } },
       { $project: { assignedToArr: 0 } },
+      // Populate taggedUsers (user name + reputation)
+      { $lookup: { from: 'users', localField: 'taggedUsers', foreignField: '_id', as: 'taggedUsers' } },
       // Populate resolvedFAQ (FAQ title)
       { $lookup: { from: 'faqs', localField: 'resolvedFAQ', foreignField: '_id', as: 'resolvedFAQArr' } },
       { $addFields: { resolvedFAQ: { $arrayElemAt: ['$resolvedFAQArr', 0] } } },
@@ -95,7 +102,9 @@ exports.getQueryById = async (req, res) => {
   try {
     const query = await Query.findById(req.params.id)
       .populate('createdBy', 'name reputation')
-      .populate('assignedTo', 'name reputation');
+      .populate('assignedTo', 'name reputation')
+      .populate('taggedUsers', 'name reputation')
+      .populate('relatedQueries', 'title status');
 
     if (!query) return res.status(404).json({ error: 'Query not found' });
 
@@ -131,7 +140,7 @@ exports.getQueryById = async (req, res) => {
 // Create a new query with 24hr SLA
 exports.createQuery = async (req, res) => {
   try {
-    const { title, description, tags, taggedUsers } = req.body;
+    const { title, description, tags, taggedUsers, attachments } = req.body;
     if (req.user.role === 'admin') {
       return res.status(403).json({ error: 'Admins cannot raise queries' });
     }
@@ -140,6 +149,16 @@ exports.createQuery = async (req, res) => {
     }
     if (taggedUsers && Array.isArray(taggedUsers) && taggedUsers.length > 2) {
       return res.status(400).json({ error: 'You are allowed to tag a maximum of 2 contributors' });
+    }
+
+    // Validate attachments if provided (max 5, each must have url + filename + mimetype)
+    if (attachments !== undefined) {
+      if (!Array.isArray(attachments)) {
+        return res.status(400).json({ error: 'Attachments must be an array' });
+      }
+      if (attachments.length > 5) {
+        return res.status(400).json({ error: 'You can attach a maximum of 5 files' });
+      }
     }
 
     // Cooldown: max 3 queries per 24 hours
@@ -258,10 +277,13 @@ exports.createQuery = async (req, res) => {
       createdBy: req.user._id,
       status: 'open',
       expiresAt,
-      taggedUsers: taggedUsers || []
+      taggedUsers: taggedUsers || [],
+      // Store uploaded file references; already validated above
+      attachments: Array.isArray(attachments) ? attachments.slice(0, 5) : []
     });
 
     await query.populate('createdBy', 'name reputation');
+    await query.populate('taggedUsers', 'name reputation');
 
     // Record this submission timestamp for cooldown tracking
     await User.findByIdAndUpdate(req.user._id, {
@@ -275,6 +297,54 @@ exports.createQuery = async (req, res) => {
     if (taggedUsers && taggedUsers.length > 0) {
       notifyTaggedUsers(query, taggedUsers).catch(err => console.error('Failed to notify tagged users:', err));
     }
+
+    // Trigger RAG auto-answer and semantic linkage in the background
+    setImmediate(async () => {
+      // 1. Semantic Linkage & Knowledge Graph Suggestion
+      try {
+        const { linkQuerySemanticGraph } = require('./ragController');
+        await linkQuerySemanticGraph(query._id);
+      } catch (err) {
+        console.error('[Semantic Graph] Failed background linkage:', err);
+      }
+
+      // 2. RAG Auto-Answer
+      try {
+        const { generateRagAnswerText } = require('./ragController');
+        const Answer = require('../models/Answer');
+        const User = require('../models/User');
+
+        let botUser = await User.findOne({ email: 'ragbot@faqapp.local' });
+        if (!botUser) {
+          botUser = await User.create({
+            name: 'RAG Assistant',
+            email: 'ragbot@faqapp.local',
+            password: 'ragbot_secure_password_random_123',
+            role: 'user',
+            isVolunteer: true,
+            reputation: 9999,
+            isEmailVerified: true
+          });
+        }
+
+        const answerText = await generateRagAnswerText(query.title);
+        
+        // Post the answer
+        const newAnswer = await Answer.create({
+          content: answerText,
+          queryId: query._id,
+          userId: botUser._id,
+          isVetted: true
+        });
+
+        // Increment answer count on query
+        await Query.findByIdAndUpdate(query._id, { $inc: { answerCount: 1 } });
+        
+        console.log(`[RAG Auto-Answer] Successfully answered query "${query.title}" with Answer ${newAnswer._id}`);
+      } catch (err) {
+        console.error('[RAG Auto-Answer] Failed to generate background auto-answer:', err);
+      }
+    });
 
     res.status(201).json({ message: 'Query raised successfully', query });
   } catch (error) {
@@ -442,10 +512,31 @@ exports.closeQuery = async (req, res) => {
       return res.status(403).json({ error: 'Only the query owner or an admin can close this query' });
     }
 
+    const wasSlaBreached = query.expiresAt < new Date() && (query.status === 'open' || query.status === 'claimed');
+
     query.status = 'closed';
     query.answeredAt = new Date();
     query.assignedTo = null;
     await query.save();
+
+    // Clear RAG cache so the newly closed query is instantly indexed
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on query close:', err.message);
+    }
+
+    // Log query close by admin
+    if (isAdmin) {
+      await AuditLog.create({
+        action: wasSlaBreached ? 'resolved SLA breach' : 'soft-deleted',
+        performedBy: req.user._id,
+        targetModel: 'Query',
+        targetId: query._id,
+        targetName: query.title
+      });
+    }
 
     const populated = await Query.findById(query._id)
       .populate('createdBy', 'name reputation')
@@ -466,6 +557,14 @@ exports.deleteQuery = async (req, res) => {
 
     await Answer.deleteMany({ queryId: query._id });
     await query.deleteOne();
+
+    // Clear RAG cache so the deleted query is instantly removed from index
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on query delete:', err.message);
+    }
 
     res.json({ message: 'Query deleted' });
   } catch (error) {
@@ -564,6 +663,11 @@ exports.toggleFacing = async (req, res) => {
     }
 
     await query.save();
+
+    // Check and trigger FAQ promotion checks
+    const { checkFAQPromotion } = require('../services/promotionService');
+    checkFAQPromotion(query._id).catch(e => console.warn('Failed background promotion check on toggleFacing:', e.message));
+
     res.json({ facingCount: query.facingCount, facingUsers: query.facingUsers });
   } catch (error) {
     console.error('Toggle facing error:', error);

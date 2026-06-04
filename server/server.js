@@ -17,6 +17,21 @@ async function bootstrap() {
       const { seedDatabase } = require('./seed');
       await seedDatabase(true);
     }
+
+    // Ensure RAG Assistant bot user is initialized in database
+    const ragBot = await User.findOne({ email: 'ragbot@faqapp.local' });
+    if (!ragBot) {
+      await User.create({
+        name: 'RAG Assistant',
+        email: 'ragbot@faqapp.local',
+        password: 'ragbot_secure_password_random_123',
+        role: 'user',
+        isVolunteer: true,
+        reputation: 9999,
+        isEmailVerified: true
+      });
+      console.log('Created RAG Assistant bot user');
+    }
   } catch (err) {
     console.error('Database connection or seeding failed:', err.message);
     process.exit(1);

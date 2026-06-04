@@ -29,6 +29,11 @@ const protect = async (req, res, next) => {
       return res.status(401).json({ error: 'User not found' });
     }
 
+    // Check tokenVersion
+    if (decoded.tokenVersion === undefined || decoded.tokenVersion !== user.tokenVersion) {
+      return res.status(401).json({ error: 'Session expired - please log in again' });
+    }
+
     if (user.status === 'banned') {
       return res.status(403).json({ error: 'Account is banned' });
     }
@@ -54,7 +59,7 @@ const optionalAuth = async (req, res, next) => {
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'grantha-secret-key');
       const user = await User.findById(decoded.userId);
-      if (user && user.status === 'active') {
+      if (user && user.status === 'active' && decoded.tokenVersion !== undefined && decoded.tokenVersion === user.tokenVersion) {
         req.user = user;
       }
     }

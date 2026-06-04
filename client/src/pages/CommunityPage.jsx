@@ -244,11 +244,26 @@ function CommunityPage() {
   const { user, updateUser } = useAuth();
   const toast = useToast();
   const location = useLocation();
+  const navigate = useNavigate();
 
   const [queries, setQueries] = useState([]);
   const [highlightedQueryId, setHighlightedQueryId] = useState(null);
   const [expandedQuery, setExpandedQuery] = useState(null);
-  const [answerContent, setAnswerContent] = useState({});
+  const [answerContent, setAnswerContent] = useState(() => {
+    const initial = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('answer_draft_')) {
+          const qId = key.substring('answer_draft_'.length);
+          initial[qId] = localStorage.getItem(key) || '';
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load answer drafts:', e);
+    }
+    return initial;
+  });
   const [editingQueryId, setEditingQueryId] = useState(null);
   const [editForm, setEditForm] = useState({ title: '', description: '', tags: [] });
   const [similarQueries, setSimilarQueries] = useState([]);
@@ -406,7 +421,22 @@ function CommunityPage() {
     }
   };
 
+  const handleSaveAnswerDraft = (queryId) => {
+    const content = answerContent[queryId];
+    if (!content?.trim()) {
+      toast.warning('Please write an answer before saving a draft.');
+      return;
+    }
+    localStorage.setItem(`answer_draft_${queryId}`, content);
+    toast.success('Answer draft saved!');
+  };
+
   const handleSubmitAnswer = async (queryId, bypassVolunteerCheck = false) => {
+    if (!user) {
+      toast.warning('Please sign in to answer.');
+      navigate('/login', { state: { from: location.pathname + location.search } });
+      return;
+    }
     const content = answerContent[queryId];
     if (!content?.trim()) { toast.warning('Please write an answer before submitting.'); return; }
     if (!user) { toast.warning('Please sign in to answer.'); return; }
@@ -418,6 +448,7 @@ function CommunityPage() {
     setSubmitting(queryId);
     try {
       await createAnswer(queryId, content);
+      localStorage.removeItem(`answer_draft_${queryId}`); // Clear draft on success
       setAnswerContent({ ...answerContent, [queryId]: '' });
       toast.success('Answer submitted!');
       const detailsRes = await getQueryById(queryId);
@@ -525,7 +556,11 @@ function CommunityPage() {
   };
 
   const handleTakeQuestion = async (bypassVolunteerCheck = false) => {
-    if (!user) { toast.warning('Please sign in to take a question'); return; }
+    if (!user) {
+      toast.warning('Please sign in to take a question');
+      navigate('/login', { state: { from: location.pathname + location.search } });
+      return;
+    }
     if (!user.isVolunteer && !bypassVolunteerCheck) {
       setPendingAction({ type: 'take' });
       setShowVolunteerModal(true);
@@ -753,6 +788,7 @@ function CommunityPage() {
                     }}
                     answerContent={answerContent[query._id] || ''}
                     onAnswerChange={val => setAnswerContent({ ...answerContent, [query._id]: val })}
+                    onSaveAnswerDraft={() => handleSaveAnswerDraft(query._id)}
                     onSubmitAnswer={() => handleSubmitAnswer(query._id)}
                     onUpvoteAnswer={handleUpvoteAnswer}
                     onAcceptAnswer={handleAcceptAnswer}
@@ -762,6 +798,16 @@ function CommunityPage() {
                     onUnclaimQuery={() => handleUnclaimQuery(query._id)}
                     onStartEdit={() => handleStartEdit(query)}
                     isEditing={editingQueryId === query._id}
+                    onPromoteQuery={(q, ans) => {
+                      setPromoData({
+                        queryId: q._id,
+                        answerId: ans._id,
+                        title: q.title,
+                        content: ans.content,
+                        tags: q.tags || []
+                      });
+                      setShowPromoModal(true);
+                    }}
                     editForm={editForm}
                     onEditFormChange={setEditForm}
                     onSaveEdit={() => handleSaveEdit(query._id)}
@@ -1028,6 +1074,96 @@ function CommunityPage() {
           </div>
         </div>
       )}
+
+      {/* ── Collaborative FAQ Promotion Modal ── */}
+      {showPromoModal && (
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#22211e] rounded-2xl max-w-xl w-full border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4.5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-serif font-bold text-slate-850 dark:text-slate-100 flex items-center gap-2">
+                <TrophyIcon className="w-5 h-5 text-emerald-500" />
+                Collaborative FAQ Promotion
+              </h3>
+              <button
+                onClick={() => setShowPromoModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto space-y-4">
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-normal">
+                Refine the proposed Wiki FAQ details below. Submitting this request sends it to admins for quick approval.
+              </p>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Proposed Question</label>
+                <input
+                  type="text"
+                  value={promoData.title}
+                  onChange={(e) => setPromoData({ ...promoData, title: e.target.value })}
+                  className="input text-sm"
+                  maxLength={200}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Proposed Answer Content</label>
+                <RichTextEditor
+                  value={promoData.content}
+                  onChange={(val) => setPromoData({ ...promoData, content: val })}
+                  placeholder="Propose the FAQ answer..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Proposed Tags</label>
+                <TagInput
+                  tags={promoData.tags}
+                  onChange={(tags) => setPromoData({ ...promoData, tags })}
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowPromoModal(false)}
+                className="px-4 py-2 border border-slate-300 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-sm font-semibold transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!promoData.title.trim() || !promoData.content.trim()) {
+                    toast.warning('Title and Answer content are required.');
+                    return;
+                  }
+                  try {
+                    await createFAQRequest({
+                      queryId: promoData.queryId,
+                      answerId: promoData.answerId,
+                      proposedQuestion: promoData.title,
+                      proposedAnswer: promoData.content,
+                      proposedTags: promoData.tags
+                    });
+                    toast.success('Collaborative FAQ Request submitted successfully!');
+                    setShowPromoModal(false);
+                    fetchQueries();
+                  } catch (err) {
+                    toast.error(err.response?.data?.error || 'Failed to submit FAQ request.');
+                  }
+                }}
+                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition-all shadow-sm flex items-center gap-1"
+              >
+                Submit FAQ Promotion
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1036,19 +1172,19 @@ function CommunityPage() {
 
 function QueryCard({
   query, isExpanded, onToggle,
-  answerContent, onAnswerChange, onSubmitAnswer,
+  answerContent, onAnswerChange, onSaveAnswerDraft, onSubmitAnswer,
   onUpvoteAnswer, onAcceptAnswer, onRequestFAQ, onVetAnswer,
   onClaimQuery, onUnclaimQuery, onStartEdit,
   isEditing, editForm, onEditFormChange, onSaveEdit, onCancelEdit,
   similarQueries,
   submitting, currentUser, onFacingToggle,
-  isHighlighted
+  isHighlighted, onPromoteQuery
 }) {
   const assignedToId = query.assignedTo ? (query.assignedTo._id || query.assignedTo) : null;
   const isAssignedToCurrentUser = currentUser && assignedToId && assignedToId === (currentUser._id || currentUser.id);
   const isOwnedByCurrentUser = currentUser && query.createdBy && (query.createdBy._id || query.createdBy) === (currentUser._id || currentUser.id);
   const isClosed = query.status === 'closed';
-  const canClaim = !isClosed && !assignedToId && currentUser && currentUser.role !== 'admin' && !isOwnedByCurrentUser;
+  const canClaim = !isClosed && !assignedToId && (!currentUser || (currentUser.role !== 'admin' && !isOwnedByCurrentUser));
   const canRelease = !isClosed && isAssignedToCurrentUser;
   const isEditSubmitting = submitting === 'edit-' + query._id;
 
@@ -1230,6 +1366,11 @@ function QueryCard({
                   onChange={val => onEditFormChange({ ...editForm, description: val })}
                   placeholder="Edit the description..."
                 />
+                {getWordCount(editForm.description) > MAX_WORDS && (
+                  <p className="text-xs text-red-500 mt-2">
+                    Description exceeds the {MAX_WORDS}-word limit.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">Edit Tags</label>
@@ -1238,7 +1379,7 @@ function QueryCard({
               <div className="flex gap-2.5 pt-2">
                 <button 
                   onClick={onSaveEdit} 
-                  disabled={isEditSubmitting}
+                  disabled={isEditSubmitting || getWordCount(editForm.description) > MAX_WORDS}
                   className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-all duration-150 disabled:opacity-50"
                 >
                   {isEditSubmitting ? 'Saving...' : 'Save Changes'}
@@ -1261,7 +1402,7 @@ function QueryCard({
                   Description
                 </p>
                 <div className="text-slate-800 dark:text-slate-200 text-sm prose dark:prose-invert max-w-none leading-relaxed">
-                  <MarkdownContent content={query.description} />
+                  <MarkdownContent content={query.description} taggedUsers={query.taggedUsers} />
                 </div>
               </div>
 
@@ -1315,6 +1456,67 @@ function QueryCard({
                         </span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Related Knowledge Graph (Semantic Tag Linkage) */}
+              {query.relatedQueries && query.relatedQueries.length > 0 && (
+                <div className="mb-6 bg-blue-50/20 dark:bg-blue-950/10 rounded-xl p-4 border border-blue-100/50 dark:border-slate-800/40 animate-fade-in">
+                  <p className="text-xs font-semibold text-blue-650 dark:text-blue-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5 font-serif">
+                    <svg className="w-3.5 h-3.5 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                    </svg>
+                    Semantic Knowledge Graph: Related Queries
+                  </p>
+                  <div className="space-y-2">
+                    {query.relatedQueries.map(rel => (
+                      <div key={rel._id} className="text-xs flex items-center justify-between gap-3 p-1 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900 transition-all">
+                        <span className="text-slate-700 dark:text-slate-350 font-medium truncate">
+                          🔗 {rel.title}
+                        </span>
+                        <span className={`badge shrink-0 text-[9px] ${
+                          rel.status === 'open' 
+                            ? 'badge-blue' 
+                            : rel.status === 'claimed' 
+                            ? 'badge-yellow' 
+                            : rel.status === 'answered' 
+                            ? 'badge-green' 
+                            : 'badge-gray'
+                        }`}>
+                          {rel.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Collaborative FAQ Promotion Card */}
+              {isClosed && (isOwnedByCurrentUser || (currentUser && query.answers?.some(a => a.isAccepted && (a.userId?._id || a.userId) === (currentUser._id || currentUser.id)))) && !query.resolvedFAQ && (
+                <div className="mb-6 bg-gradient-to-r from-emerald-500/10 to-teal-500/10 dark:from-emerald-950/25 dark:to-teal-950/25 border border-emerald-350/50 dark:border-emerald-800/40 rounded-xl p-4.5 animate-fade-in">
+                  <div className="flex items-start gap-3">
+                    <span className="text-xl mt-0.5 select-none">✨</span>
+                    <div className="flex-1">
+                      <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 font-serif">
+                        Collaborative FAQ Promotion
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+                        This resolved community query has high engagement. Submit it as an official Wiki FAQ to receive <strong className="text-emerald-600 dark:text-emerald-400">+15 reputation points</strong> for both the asker and the responder upon approval!
+                      </p>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const acceptedAnswer = query.answers?.find(a => a.isAccepted);
+                          if (acceptedAnswer) {
+                            onPromoteQuery(query, acceptedAnswer);
+                          }
+                        }}
+                        className="mt-3 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all flex items-center gap-1"
+                      >
+                        <TrophyIcon className="w-3.5 h-3.5 text-white mr-0.5 animate-pulse" /> Formalize to Wiki FAQ
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -1508,6 +1710,21 @@ function QueryCard({
                   );
                 }
                 if (canAnswer) {
+                  if (!currentUser) {
+                    return (
+                      <div className="pt-2 border-t border-slate-100 dark:border-slate-800 text-center py-4 bg-slate-50/50 dark:bg-[#191816]/30 rounded-xl border border-slate-100 dark:border-slate-800 mt-3">
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-3 font-semibold">
+                          Have a solution? Sign in to contribute an answer.
+                        </p>
+                        <button
+                          onClick={onSubmitAnswer}
+                          className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-sm font-semibold transition-all duration-150 shadow-sm"
+                        >
+                          Sign In to Answer
+                        </button>
+                      </div>
+                    );
+                  }
                   return (
                     <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
                       <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1">
@@ -1518,7 +1735,15 @@ function QueryCard({
                         onChange={onAnswerChange}
                         placeholder="Write a step-by-step resolution, using Markdown formats..."
                       />
-                      <div className="flex justify-end mt-3">
+                      <div className="flex justify-end gap-2.5 mt-3">
+                        <button
+                          type="button"
+                          onClick={onSaveAnswerDraft}
+                          disabled={!answerContent?.trim()}
+                          className="px-4 py-2.5 border border-slate-300 dark:border-slate-800 text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 rounded-xl text-sm font-semibold transition-all duration-150"
+                        >
+                          Save Draft
+                        </button>
                         <button
                           onClick={onSubmitAnswer}
                           disabled={submitting === query._id || !answerContent?.trim()}

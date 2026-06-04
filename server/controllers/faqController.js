@@ -8,11 +8,11 @@ exports.getFAQs = async (req, res) => {
     const { q, tag, status = 'resolved', sort = 'recent', page = 1, limit = 20, pinned } = req.query;
 
     const query = { status: 'resolved', deletedAt: null };
-    
+
     if (pinned === 'true') {
       query.pinned = true;
     }
-    
+
     // Regex-based substring search for high compatibility and partial matching
     if (q) {
       const cleanQ = q.trim();
@@ -139,7 +139,9 @@ exports.upvoteFAQ = async (req, res) => {
       faq.upvotes -= 1;
       faq.upvoters = faq.upvoters.filter(id => id.toString() !== userId.toString());
 
-      // Decrease author reputation (-2 per upvote)
+
+      // FIX: Decrement author reputation by 2
+
       await User.findByIdAndUpdate(faq.createdBy, {
         $inc: { reputation: -2 }
       });
@@ -153,6 +155,7 @@ exports.upvoteFAQ = async (req, res) => {
         $inc: { reputation: 2 }
       });
     }
+
 
     await faq.save();
 

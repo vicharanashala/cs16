@@ -94,10 +94,28 @@ const querySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   }],
+  // Files attached when the query was raised (images, PDFs, DOC/DOCX)
+  attachments: [{
+    url:      { type: String, required: true }, // served path, e.g. /uploads/xxx.pdf
+    filename: { type: String, required: true }, // original file name shown in UI
+    mimetype: { type: String, required: true }  // used to render correct icon on frontend
+  }],
   deletedAt: {
     type: Date,
     default: null
-  }
+  },
+  embedding: {
+    type: [Number],
+    default: undefined
+  },
+  searchHits: {
+    type: Number,
+    default: 0
+  },
+  relatedQueries: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Query'
+  }]
 }, {
   timestamps: true
 });

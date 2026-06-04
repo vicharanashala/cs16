@@ -207,6 +207,14 @@ exports.acceptAnswer = async (req, res) => {
     query.resolvedFAQ = null;
     await query.save();
 
+    // Clear RAG cache so the newly closed query is instantly indexed
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on answer accept:', err.message);
+    }
+
     // Auto-promote high-confidence community answers to FAQ request
     if (answer.upvotes >= COMMUNITY_FAQ_UPVOTE_THRESHOLD) {
       const existingRequest = await FAQRequest.findOne({ answerId: answer._id, status: 'pending' });
@@ -255,6 +263,14 @@ exports.convertAnswerToFAQ = async (req, res) => {
       resolvedFAQ: faq._id
     });
 
+    // Clear RAG cache so the newly created FAQ is instantly indexed
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on convert to FAQ:', err.message);
+    }
+
     res.status(201).json({ message: 'FAQ created from answer', faq });
   } catch (error) {
     res.status(500).json({ error: 'Failed to convert to FAQ' });
@@ -277,6 +293,14 @@ exports.editAnswer = async (req, res) => {
 
     answer.content = content;
     await answer.save();
+
+    // Clear RAG cache so the edited answer is instantly updated in index
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on answer edit:', err.message);
+    }
 
     await answer.populate('userId', 'name reputation');
 
@@ -345,6 +369,14 @@ exports.deleteAnswer = async (req, res) => {
     await UpvoteLog.deleteMany({ answerId: answer._id });
 
     await answer.deleteOne();
+
+    // Clear RAG cache so the deleted answer/query state is instantly updated in index
+    try {
+      const { clearRagCache } = require('./ragController');
+      clearRagCache();
+    } catch (err) {
+      console.warn('Failed to clear RAG cache on answer delete:', err.message);
+    }
 
 
     res.json({ message: 'Answer deleted' });

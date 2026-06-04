@@ -8,33 +8,62 @@ const PAGE_SIZE = 10;
 
 function Pagination({ page, totalPages, onPage }) {
   if (totalPages <= 1) return null;
-  const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
+
+  // Build a windowed list: always show first, last, current ±1, with '…' gaps
+  const getPageItems = () => {
+    const items = [];
+    const delta = 0; // pages on each side of current
+
+    const rangeStart = Math.max(2, page - delta);
+    const rangeEnd = Math.min(totalPages - 1, page + delta);
+
+    items.push(1);
+
+    if (rangeStart > 2) items.push('start-ellipsis');
+
+    for (let p = rangeStart; p <= rangeEnd; p++) items.push(p);
+
+    if (rangeEnd < totalPages - 1) items.push('end-ellipsis');
+
+    if (totalPages > 1) items.push(totalPages);
+
+    return items;
+  };
+
+  const btnBase = 'min-w-[2rem] px-2.5 py-1.5 rounded-lg border text-sm transition-colors';
+
   return (
     <div className="flex items-center justify-center gap-1 py-6">
       <button
         onClick={() => onPage(page - 1)}
         disabled={page <= 1}
-        className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm disabled:opacity-40 hover:bg-slate-50 transition-colors"
+        className={`${btnBase} border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800`}
       >
         ← Prev
       </button>
-      {pages.map(p => (
-        <button
-          key={p}
-          onClick={() => onPage(p)}
-          className={`px-3 py-1.5 rounded-lg border text-sm transition-colors ${
-            p === page
-              ? 'bg-primary-100 border-primary-300 text-primary-700 font-medium'
-              : 'border-slate-200 hover:bg-slate-50'
-          }`}
-        >
-          {p}
-        </button>
-      ))}
+
+      {getPageItems().map((item, idx) =>
+        item === 'start-ellipsis' || item === 'end-ellipsis' ? (
+          <span key={item} className="px-1 text-slate-400 text-sm select-none">…</span>
+        ) : (
+          <button
+            key={item}
+            onClick={() => onPage(item)}
+            className={`${btnBase} ${
+              item === page
+                ? 'bg-primary-100 border-primary-300 text-primary-700 dark:bg-primary-900/40 dark:border-primary-700 dark:text-primary-300 font-medium'
+                : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+          >
+            {item}
+          </button>
+        )
+      )}
+
       <button
         onClick={() => onPage(page + 1)}
         disabled={page >= totalPages}
-        className="px-3 py-1.5 rounded-lg border border-slate-200 text-sm disabled:opacity-40 hover:bg-slate-50 transition-colors"
+        className={`${btnBase} border-slate-200 dark:border-slate-700 disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-800`}
       >
         Next →
       </button>
@@ -58,18 +87,31 @@ function FAQsPage() {
   const [searchTotal, setSearchTotal] = useState(0);
   const [searchLoading, setSearchLoading] = useState(false);
   const [allFAQs, setAllFAQs] = useState([]);
+  const [allPage, setAllPage] = useState(1);
+  const [allTotal, setAllTotal] = useState(0);
   const [pinnedFAQs, setPinnedFAQs] = useState([]);
   const [overview, setOverview] = useState(null);
   const [categoryContributors, setCategoryContributors] = useState([]);
   const [categoryContributorsLoading, setCategoryContributorsLoading] = useState(false);
+  const [sortBy, setSortBy] = useState('recent');
 
   // Load initial data
   useEffect(() => {
     loadCategories();
-    loadAllFAQs();
     loadPinnedFAQs();
     loadOverview();
   }, []);
+
+  // When sortBy changes, reload whatever list is currently active
+  useEffect(() => {
+    if (searchResults !== null) {
+      handleSearch(null, 1);
+    } else if (selectedCategory) {
+      loadCategoryFAQs(selectedCategory.tag, 1);
+    } else {
+      loadAllFAQs(1);
+    }
+  }, [sortBy]);
 
   const loadPinnedFAQs = async () => {
     try {
@@ -155,11 +197,13 @@ function FAQsPage() {
     }
   };
 
-  const loadAllFAQs = async () => {
+  const loadAllFAQs = async (page = 1) => {
     try {
       setLoading(true);
-      const res = await getFAQs({ page: 1, limit: 20 });
+      const res = await getFAQs({ page, limit: PAGE_SIZE, sort: sortBy });
       setAllFAQs(res.data?.faqs || res.data || []);
+      setAllTotal(res.data?.pagination?.total || 0);
+      setAllPage(page);
     } catch (err) {
       console.error('Failed to load all FAQs:', err);
     } finally {
@@ -170,7 +214,7 @@ function FAQsPage() {
   const loadCategoryFAQs = async (tag, page = 1) => {
     try {
       setLoading(true);
-      const res = await getFAQsByCategory(tag, { page, limit: PAGE_SIZE });
+      const res = await getFAQsByCategory(tag, { page, limit: PAGE_SIZE, sort: sortBy });
       setCategoryFAQs(res.data.faqs);
       setFaqTotal(res.data.pagination?.total || 0);
       setFaqPage(page);
@@ -189,7 +233,7 @@ function FAQsPage() {
     }
     setSearchLoading(true);
     try {
-      const res = await getFAQs({ search: searchQuery, page, pageSize: PAGE_SIZE });
+      const res = await getFAQs({ search: searchQuery, page, pageSize: PAGE_SIZE, sort: sortBy });
       setSearchResults(res.data.faqs);
       setSearchTotal(res.data.pagination?.total || 0);
       setSearchPage(page);
@@ -247,6 +291,7 @@ function FAQsPage() {
     if (selectedCategory?.tag === cat.tag) {
       setSelectedCategory(null);
       setCategoryFAQs([]);
+      loadAllFAQs(1);
     } else {
       setSelectedCategory(cat);
       setSearchResults(null);
@@ -261,7 +306,7 @@ function FAQsPage() {
       {categories.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-5">
           <button
-            onClick={() => { setSelectedCategory(null); setSearchResults(null); setSearchQuery(''); }}
+            onClick={() => { setSelectedCategory(null); setSearchResults(null); setSearchQuery(''); loadAllFAQs(1); }}
             className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
               !selectedCategory && !searchResults
                 ? 'bg-primary-600 text-white'
@@ -383,6 +428,22 @@ function FAQsPage() {
               {/* No category selected — show all FAQs */}
               {!selectedCategory && (
                 <section>
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-200/50 dark:border-slate-800/50 pb-2 select-none">
+                    <h2 className="text-sm font-semibold text-slate-700 dark:text-slate-350 uppercase tracking-wide">
+                      All FAQs
+                    </h2>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">Sort By:</span>
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
+                        className="bg-transparent text-xs font-semibold text-slate-650 dark:text-slate-300 focus:outline-none cursor-pointer border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 hover:border-slate-300 dark:hover:border-slate-700 transition-all bg-white dark:bg-slate-900"
+                      >
+                        <option value="recent">Recent</option>
+                        <option value="popular">Upvotes</option>
+                      </select>
+                    </div>
+                  </div>
                   {loading ? (
                     <div className="flex justify-center py-10"><div className="spinner" /></div>
                   ) : (
@@ -396,20 +457,40 @@ function FAQsPage() {
                       )}
                     </div>
                   )}
+                  {allTotal > PAGE_SIZE && (
+                    <Pagination
+                      page={allPage}
+                      totalPages={Math.ceil(allTotal / PAGE_SIZE)}
+                      onPage={(p) => loadAllFAQs(p)}
+                    />
+                  )}
                 </section>
               )}
 
               {/* Category selected — show filtered FAQs */}
               {selectedCategory && (
                 <section>
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-semibold text-slate-900">
-                      {selectedCategory.name}
-                      <span className="font-normal text-slate-400 text-sm ml-2">({faqTotal} FAQs)</span>
+                  <div className="flex items-center justify-between mb-4 border-b border-slate-200/50 dark:border-slate-800/50 pb-2">
+                    <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <span>{selectedCategory.name}</span>
+                      <span className="font-normal text-slate-450 text-xs">({faqTotal} FAQs)</span>
                     </h2>
-                    <button onClick={() => setSelectedCategory(null)} className="btn-ghost text-sm text-slate-500">
-                      ✕ Back to all
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400 dark:text-slate-500 font-medium select-none">Sort By:</span>
+                        <select
+                          value={sortBy}
+                          onChange={(e) => setSortBy(e.target.value)}
+                          className="bg-transparent text-xs font-semibold text-slate-655 dark:text-slate-300 focus:outline-none cursor-pointer border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 hover:border-slate-300 dark:hover:border-slate-700 transition-all bg-white dark:bg-slate-900"
+                        >
+                          <option value="recent">Recent</option>
+                          <option value="popular">Upvotes</option>
+                        </select>
+                      </div>
+                      <button onClick={() => setSelectedCategory(null)} className="text-xs font-bold text-slate-500 hover:text-slate-750 dark:hover:text-slate-250 select-none">
+                        ✕ Clear
+                      </button>
+                    </div>
                   </div>
                   {loading ? (
                     <div className="flex justify-center py-10"><div className="spinner" /></div>
@@ -437,12 +518,25 @@ function FAQsPage() {
           ) : (
             /* ── Search Results (replaces central content) ── */
             <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  Search results for "{searchQuery}"
-                  <span className="font-normal text-slate-400 text-sm ml-2">({searchTotal} found)</span>
+              <div className="flex items-center justify-between mb-4 border-b border-slate-200/50 dark:border-slate-800/50 pb-2">
+                <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <span>Search results for "{searchQuery}"</span>
+                  <span className="font-normal text-slate-450 text-xs">({searchTotal} found)</span>
                 </h2>
-                <button onClick={clearSearch} className="btn-ghost text-sm text-slate-500">✕ Clear search</button>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 dark:text-slate-500 font-medium select-none">Sort By:</span>
+                    <select
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value)}
+                      className="bg-transparent text-xs font-semibold text-slate-655 dark:text-slate-300 focus:outline-none cursor-pointer border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 hover:border-slate-300 dark:hover:border-slate-700 transition-all bg-white dark:bg-slate-900"
+                    >
+                      <option value="recent">Recent</option>
+                      <option value="popular">Upvotes</option>
+                    </select>
+                  </div>
+                  <button onClick={clearSearch} className="text-xs font-bold text-slate-500 hover:text-slate-750 dark:hover:text-slate-250 select-none">✕ Clear</button>
+                </div>
               </div>
               {searchLoading ? (
                 <div className="flex justify-center py-10"><div className="spinner" /></div>

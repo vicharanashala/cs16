@@ -61,6 +61,105 @@
   }
 }
 
+/* ── Admin layout wrapper — forces dark background on the page shell ─────── */
+/* Prevents the light-mode body/layout bg from bleeding through admin pages   */
+/* The body selector is overridden by a data attribute set on mount            */
+.admin-layout {
+  background-color: #141311 !important;
+}
+
+/* When admin route is active, body carries data-admin="true" (set in Layout) */
+body[data-admin='true'] {
+  background-color: #141311 !important;
+  color: #f0ece4 !important;
+}
+
+/* ── Admin Control Station Theme (Obsidian Shadow & Gold) ───────────────────── */
+/* Applied via .theme-admin-station wrapper on AdminDashboard root node          */
+/* Scoped so it only affects /admin and never bleeds into user-facing pages       */
+.theme-admin-station {
+  --bg-surface:  #141311;
+  --bg-elevated: #1c1a17;
+  --border:      #332f27;
+  --accent:      #dca54c; /* gold accent */
+
+  background-color: var(--bg-surface);
+  color: #f0ece4;
+}
+
+/* Surface & background overrides inside admin wrapper */
+.theme-admin-station .bg-white,
+.theme-admin-station .bg-slate-50 {
+  background-color: var(--bg-elevated) !important;
+}
+.theme-admin-station .bg-slate-100,
+.theme-admin-station .bg-slate-800 {
+  background-color: color-mix(in srgb, var(--bg-elevated) 70%, #000) !important;
+}
+
+/* Border overrides */
+.theme-admin-station .border-slate-200,
+.theme-admin-station .border-slate-100,
+.theme-admin-station .border-slate-700 {
+  border-color: var(--border) !important;
+}
+
+/* Text: keep legible on very dark bg */
+.theme-admin-station .text-slate-900,
+.theme-admin-station .text-slate-800 {
+  color: #f0ece4 !important;
+}
+.theme-admin-station .text-slate-700,
+.theme-admin-station .text-slate-600 {
+  color: #c4bfb5 !important;
+}
+.theme-admin-station .text-slate-500,
+.theme-admin-station .text-slate-400 {
+  color: #857d6a !important;
+}
+
+/* Gold accent for active tab border & primary text */
+.theme-admin-station .border-primary-500,
+.theme-admin-station .text-primary-600 {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
+/* Table row hover */
+.theme-admin-station tbody tr:hover {
+  background-color: var(--bg-elevated) !important;
+}
+
+/* Inputs inside admin */
+.theme-admin-station input,
+.theme-admin-station select,
+.theme-admin-station textarea {
+  background-color: var(--bg-elevated) !important;
+  border-color: var(--border) !important;
+  color: #f0ece4 !important;
+}
+
+/* Cards inside admin */
+.theme-admin-station .card {
+  background-color: var(--bg-elevated) !important;
+  border-color: var(--border) !important;
+}
+
+/* Gold glow on btn-primary inside admin */
+.theme-admin-station .btn-primary {
+  background-color: var(--accent) !important;
+  color: #0d0c0a !important;
+}
+.theme-admin-station .btn-primary:hover {
+  background-color: #e8b96a !important;
+}
+
+/* Active tab gold indicator */
+.theme-admin-station nav button[class*="border-primary"] {
+  border-bottom-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
 /* ── Dark mode (Anthropic Obsidian Bronze Theme) ─────────────────────────────── */
 .dark {
   --bg-base:     #191816;

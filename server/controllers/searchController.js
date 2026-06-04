@@ -193,8 +193,8 @@ async function scoreFaqsAgainstQuery(queryText, limit = 5) {
   if (scored.length === 0) return [];
 
   const topScore = scored[0].score;
-  const MIN_RELATIVE_SCORE = 0.35;
-  const MIN_ABSOLUTE_SCORE = 0.8;
+  const MIN_RELATIVE_SCORE = 0.50;
+  const MIN_ABSOLUTE_SCORE = 1.5;
 
   return scored
     .filter(f => f.score >= MIN_ABSOLUTE_SCORE && f.score / topScore >= MIN_RELATIVE_SCORE)
@@ -285,6 +285,23 @@ exports.searchSimilar = async (req, res) => {
         .select('_id upvotes').lean();
       if (acceptedAnswer) resolvedQueries.push({ ...query, acceptedAnswer });
       else openQueries.push({ ...query, acceptedAnswer: null });
+    }
+
+    // Increment search hits for matched queries in background
+    if (topRawQueries.length > 0) {
+      const queryIds = topRawQueries.map(rq => rq._id);
+      Query.updateMany({ _id: { $in: queryIds } }, { $inc: { searchHits: 1 } })
+        .then(async () => {
+          try {
+            const { checkFAQPromotion } = require('../services/promotionService');
+            for (const qId of queryIds) {
+              await checkFAQPromotion(qId);
+            }
+          } catch (e) {
+            console.warn('Failed background FAQ promotion check:', e.message);
+          }
+        })
+        .catch(err => console.warn('Failed background searchHits increment:', err.message));
     }
 
     const scoredResolved = resolvedQueries.map(query => ({

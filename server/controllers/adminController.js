@@ -4,6 +4,7 @@ const Answer = require('../models/Answer');
 const FAQRequest = require('../models/FAQRequest');
 const User = require('../models/User');
 const Pin = require('../models/Pin');
+const AuditLog = require('../models/AuditLog');
 
 // ─── FAQ History (for audit trail) ────────────────────────────────────────────
 
@@ -268,6 +269,15 @@ exports.deleteFAQ = async (req, res) => {
       faq.deletedAt = null;
       faq.status = 'resolved';
       await faq.save();
+
+      await AuditLog.create({
+        action: 'restored',
+        performedBy: req.user._id,
+        targetModel: 'FAQ',
+        targetId: faq._id,
+        targetName: faq.title
+      });
+
       return res.json({ message: 'FAQ restored', faq });
     }
 
@@ -275,9 +285,18 @@ exports.deleteFAQ = async (req, res) => {
     faq.deletedAt = new Date();
     faq.status = 'deleted';
     await faq.save();
+
+    await AuditLog.create({
+      action: 'soft-deleted',
+      performedBy: req.user._id,
+      targetModel: 'FAQ',
+      targetId: faq._id,
+      targetName: faq.title
+    });
+
     res.json({ message: 'FAQ deleted', faq });
   } catch (error) {
-    res.status(500).json({ error: 'Failed to pin FAQ' });
+    res.status(500).json({ error: 'Failed to delete FAQ' });
   }
 };
 
@@ -330,8 +349,20 @@ exports.deleteQuery = async (req, res) => {
     if (query.deletedAt) {
       query.deletedAt = null;
       await query.save();
+
+      // Log query restore
+      await AuditLog.create({
+        action: 'restored',
+        performedBy: req.user._id,
+        targetModel: 'Query',
+        targetId: query._id,
+        targetName: query.title
+      });
+
       return res.json({ message: 'Query restored', query });
     }
+
+    const wasSlaBreached = query.expiresAt < new Date() && (query.status === 'open' || query.status === 'claimed');
 
     query.deletedAt = new Date();
     query.status = 'closed';
@@ -343,6 +374,15 @@ exports.deleteQuery = async (req, res) => {
       author.reputation = Math.max(0, author.reputation - 10);
       await author.save();
     }
+
+    // Log query deletion / SLA breach resolution
+    await AuditLog.create({
+      action: wasSlaBreached ? 'resolved SLA breach' : 'soft-deleted',
+      performedBy: req.user._id,
+      targetModel: 'Query',
+      targetId: query._id,
+      targetName: query.title
+    });
 
     res.json({ message: 'Query deleted', query });
   } catch (error) {
@@ -423,6 +463,33 @@ exports.getAnalytics = async (req, res) => {
         .limit(10)
     ]);
 
+    const startDate = new Date(now);
+    startDate.setUTCHours(0, 0, 0, 0);
+    startDate.setUTCDate(startDate.getUTCDate() - 29);
+
+    const dailyQueryCounts = await Query.aggregate([
+      { $match: { createdAt: { $gte: startDate }, deletedAt: null } },
+      { $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt', timezone: '+00:00' } },
+          count: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const countMap = dailyQueryCounts.reduce((acc, item) => {
+      acc[item._id] = item.count;
+      return acc;
+    }, {});
+
+    const dailyStats = [];
+    for (let i = 0; i < 30; i += 1) {
+      const currentDate = new Date(startDate);
+      currentDate.setUTCDate(startDate.getUTCDate() + i);
+      const dateString = currentDate.toISOString().slice(0, 10);
+      dailyStats.push({ date: dateString, queries: countMap[dateString] || 0 });
+    }
+
     // Weekly growth percentages
     const [
       newFAQsLastWeek, newQueriesLastWeek, newAnswersLastWeek,
@@ -459,7 +526,8 @@ exports.getAnalytics = async (req, res) => {
         ? Math.round((slaBreachedQueries / openQueries) * 100)
         : 0,
       popularTags,
-      topContributors
+      topContributors,
+      dailyStats
     });
   } catch (error) {
     console.error('Analytics error:', error);
@@ -631,6 +699,16 @@ exports.createPin = async (req, res) => {
     await pin.save();
     await pin.populate('pinnedBy', 'name');
     await pin.populate('faqId', 'title finalAnswer tags');
+
+    // Log Pin creation
+    await AuditLog.create({
+      action: 'created pin',
+      performedBy: req.user._id,
+      targetModel: 'Pin',
+      targetId: pin._id,
+      targetName: pin.title
+    });
+
     res.status(201).json(pin);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create pin' });
@@ -650,6 +728,16 @@ exports.updatePin = async (req, res) => {
     await pin.save();
     await pin.populate('pinnedBy', 'name');
     await pin.populate('faqId', 'title finalAnswer tags');
+
+    // Log Pin update
+    await AuditLog.create({
+      action: 'updated pin',
+      performedBy: req.user._id,
+      targetModel: 'Pin',
+      targetId: pin._id,
+      targetName: pin.title
+    });
+
     res.json(pin);
   } catch (error) {
     res.status(500).json({ error: 'Failed to update pin' });
@@ -662,6 +750,16 @@ exports.deletePin = async (req, res) => {
     if (!pin) return res.status(404).json({ error: 'Pin not found' });
     pin.deletedAt = new Date();
     await pin.save();
+
+    // Log Pin delete
+    await AuditLog.create({
+      action: 'deleted pin',
+      performedBy: req.user._id,
+      targetModel: 'Pin',
+      targetId: pin._id,
+      targetName: pin.title
+    });
+
     res.json({ message: 'Pin removed' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete pin' });
@@ -715,6 +813,9 @@ exports.patchFaq = async (req, res) => {
     const faq = await FAQ.findById(id);
     if (!faq) return res.status(404).json({ error: 'FAQ not found' });
 
+    // Track previous state for soft-delete/restore auditing
+    const wasDeleted = faq.deletedAt !== null && faq.deletedAt !== undefined;
+
     // Handle audit trail if finalAnswer is being changed
     if (finalAnswer !== undefined && faq.finalAnswer !== finalAnswer) {
       const history = new FAQHistory({
@@ -740,9 +841,37 @@ exports.patchFaq = async (req, res) => {
     if (tags !== undefined) faq.tags = tags.map(t => t.toLowerCase().trim());
 
     await faq.save();
+
+    const isDeleted = faq.deletedAt !== null && faq.deletedAt !== undefined;
+
+    // Audit FAQ soft-delete / restore
+    if (deletedAt !== undefined && wasDeleted !== isDeleted) {
+      await AuditLog.create({
+        action: isDeleted ? 'soft-deleted' : 'restored',
+        performedBy: req.user._id,
+        targetModel: 'FAQ',
+        targetId: faq._id,
+        targetName: faq.title
+      });
+    }
+
     res.json({ message: 'FAQ updated successfully', faq });
   } catch (error) {
     console.error('patchFaq error:', error);
     res.status(500).json({ error: 'Failed to patch FAQ' });
+  }
+};
+
+// Get Admin Audit Logs
+exports.getAuditLogs = async (req, res) => {
+  try {
+    const logs = await AuditLog.find()
+      .populate('performedBy', 'name')
+      .sort({ timestamp: -1 })
+      .limit(100);
+    res.json(logs);
+  } catch (error) {
+    console.error('getAuditLogs error:', error);
+    res.status(500).json({ error: 'Failed to fetch audit logs' });
   }
 };

@@ -42,7 +42,8 @@ exports.getLeaderboard = async (req, res) => {
         {
           $match: {
             'userInfo.status': 'active',
-            'userInfo.role': { $ne: 'admin' }
+            'userInfo.role': { $ne: 'admin' },
+            'userInfo.email': { $ne: 'ragbot@faqapp.local' }
           }
         },
         {
@@ -61,7 +62,11 @@ exports.getLeaderboard = async (req, res) => {
     }
 
     // ── CASE 2: ALL TIME LEADERBOARD (DEFAULT LAYER RE-RETAINED) ──
-    const users = await User.find({ status: 'active', role: { $ne: 'admin' } })
+    const users = await User.find({
+      status: 'active',
+      role: { $ne: 'admin' },
+      email: { $ne: 'ragbot@faqapp.local' }
+    })
       .select('name reputation questionsAsked answersGiven role')
       .sort({ reputation: -1 })
       .limit(parseInt(limit));

@@ -21,6 +21,17 @@ export function AuthProvider({ children }) {
     }
   }, [token]);
 
+  // Handle auth-unauthorized event globally
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      logout();
+    };
+    window.addEventListener('auth-unauthorized', handleUnauthorized);
+    return () => {
+      window.removeEventListener('auth-unauthorized', handleUnauthorized);
+    };
+  }, []);
+
   const fetchUser = async () => {
     try {
       const res = await api.get('/api/auth/me');

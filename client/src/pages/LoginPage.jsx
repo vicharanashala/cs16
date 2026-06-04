@@ -97,8 +97,12 @@ function LoginPage() {
 
     try {
       if (isLogin) {
-        await login(form.email, form.password);
-        navigate(from, { replace: true });
+        const loggedInUser = await login(form.email, form.password);
+        if (loggedInUser && loggedInUser.role === 'admin') {
+          navigate('/admin', { replace: true });
+        } else {
+          navigate(from, { replace: true });
+        }
       } else {
         if (!form.name.trim()) {
           setError('Name is required');
@@ -128,9 +132,13 @@ function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login('admin@faqapp.com', 'admin123');
-      const destination = from !== '/login' ? from : '/';
-      navigate(destination, { replace: true });
+      const loggedInUser = await login('admin@faqapp.com', 'admin123');
+      if (loggedInUser && loggedInUser.role === 'admin') {
+        navigate('/admin', { replace: true });
+      } else {
+        const destination = from !== '/login' ? from : '/';
+        navigate(destination, { replace: true });
+      }
     } catch (err) {
       setError('Login failed — make sure you\'ve run the seed script');
     } finally {

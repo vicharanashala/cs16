@@ -3,6 +3,7 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom';
 import { getPins, getNotifications, markNotificationRead, markAllNotificationsRead } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
+import { getInitials, getAvatarColor } from '../utils/avatar';
 
 export default function Layout() {
   const location = useLocation();
@@ -94,10 +95,16 @@ export default function Layout() {
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
+  // Hide footer on FAQ/Wiki/Community — Samagama link lives in the RAG widget there
+  const hideFooter = ['/', '/wiki', '/community'].includes(location.pathname);
+  const isLeaderboard = location.pathname === '/leaderboard';
+  const isAdmin = location.pathname.startsWith('/admin');
+
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-[#191816]">
       {/* ── Navbar ── */}
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+      <header className="sticky top-0 z-30 shadow-sm bg-white dark:bg-[#22211e] border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">
             {/* Logo */}
@@ -105,19 +112,19 @@ export default function Layout() {
               <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
                 <span className="text-white text-sm font-bold">G</span>
               </div>
-              <span className="font-semibold text-slate-900 text-base hidden sm:block">Grantha</span>
+              <span className="font-semibold text-base hidden sm:block text-slate-900 dark:text-slate-100">Grantha</span>
             </Link>
 
             {/* Desktop nav */}
             <nav className="hidden sm:flex items-center gap-1">
-              {navLinks.map(link => (
+              {!isAdmin && navLinks.map(link => (
                 <Link
                   key={link.to}
                   to={link.to}
                   className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive(link.to)
-                      ? 'bg-primary-50 text-primary-700'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-primary-50 dark:bg-primary-950/20 text-primary-700 dark:text-primary-400'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
                   }`}
                 >
                   {link.label}
@@ -130,7 +137,7 @@ export default function Layout() {
             {/* Theme toggle */}
               <button
                 onClick={toggle}
-                className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                className="p-2 rounded-lg transition-colors text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200"
                 title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
               >
                 {dark ? (
@@ -228,9 +235,12 @@ export default function Layout() {
                   </div>
 
                   <div className="relative group">
-                    <button className="w-8 h-8 bg-primary-100 text-primary-700 rounded-full text-sm font-semibold flex items-center justify-center hover:bg-primary-200 transition-colors">
-                      {user.name?.charAt(0).toUpperCase()}
+                    <button
+                       className={`w-8 h-8 ${getAvatarColor(user.name)} text-white rounded-full text-sm font-semibold flex items-center justify-center`}
+                      >
+                        {getInitials(user.name)}
                     </button>
+                    
                     
                     {/* Analytics Tooltip pointing directly up at avatar */}
                     {showAnalyticsTooltip && (
@@ -262,9 +272,16 @@ export default function Layout() {
                         <p className="text-sm font-medium text-slate-900 truncate">{user.name}</p>
                         <p className="text-xs text-slate-500 truncate">{user.email}</p>
                       </div>
-                      <Link to="/profile" className="block px-3 py-2 text-sm text-slate-650 hover:bg-slate-50 hover:text-primary-600">
-                        My Profile
-                      </Link>
+                      {user.role !== 'admin' && (
+                        <Link to="/profile" className="block px-3 py-2 text-sm text-slate-655 hover:bg-slate-50 hover:text-primary-600">
+                          My Profile
+                        </Link>
+                      )}
+                      {user.role !== 'admin' && (
+                        <Link to="/track-query" className="block px-3 py-2 text-sm text-slate-650 hover:bg-slate-50 hover:text-primary-600">
+                          Track Query
+                        </Link>
+                      )}
                       {user.isVolunteer && (
                         <Link to="/stats" className="block px-3 py-2 text-sm text-slate-650 hover:bg-slate-50 hover:text-primary-600">
                           Board Statistics
@@ -314,7 +331,7 @@ export default function Layout() {
         {/* Mobile menu */}
         {menuOpen && (
           <div className="sm:hidden border-t border-slate-200 bg-white px-4 py-3 space-y-1">
-            {navLinks.map(link => (
+            {!isAdmin && navLinks.map(link => (
               <Link
                 key={link.to}
                 to={link.to}
@@ -343,28 +360,41 @@ export default function Layout() {
       </header>
 
       {/* ── Page content — rendered via React Router's <Outlet /> ── */}
-      <main className="flex-1">
+      {/* pb-24 on RAG-bar pages so fixed launcher never covers last content */}
+      <main className={`flex-1 ${hideFooter ? 'pb-24' : ''}`}>
         <Outlet />
       </main>
 
-      {/* ── Footer ── */}
-      <footer className="bg-white border-t border-slate-200 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 bg-primary-600 rounded flex items-center justify-center">
-                <span className="text-white text-xs font-bold">G</span>
+      {/* ── Footer — hidden on FAQ/Wiki/Community and Admin ── */}
+      {!hideFooter && !isAdmin && (
+        <footer className="bg-white border-t border-slate-200 mt-auto">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-sm text-slate-500">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 bg-primary-600 rounded flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">G</span>
+                </div>
+                <span>Grantha</span>
               </div>
-              <span>Grantha</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <Link to="/" className="hover:text-primary-600 transition-colors">FAQs</Link>
-              <Link to="/community" className="hover:text-primary-600 transition-colors">Community</Link>
-              {user && <Link to="/leaderboard" className="hover:text-primary-600 transition-colors">Leaderboard</Link>}
+              <div className="flex items-center gap-4">
+                {isLeaderboard && (
+                  <a
+                    href="https://www.samagama.in/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-primary-600 transition-colors"
+                  >
+                    samagama.in
+                  </a>
+                )}
+                <Link to="/" className="hover:text-primary-600 transition-colors">FAQs</Link>
+                <Link to="/community" className="hover:text-primary-600 transition-colors">Community</Link>
+                {user && <Link to="/leaderboard" className="hover:text-primary-600 transition-colors">Leaderboard</Link>}
+              </div>
             </div>
           </div>
-        </div>
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }

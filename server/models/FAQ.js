@@ -88,6 +88,10 @@ const faqSchema = new mongoose.Schema({
   isValidated: {
     type: Boolean,
     default: false
+  },
+  embedding: {
+    type: [Number],
+    default: undefined
   }
 }, {
   timestamps: true

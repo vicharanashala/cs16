@@ -115,7 +115,7 @@ exports.getCategories = async (req, res) => {
 exports.getFAQsByCategory = async (req, res) => {
   try {
     const { tag } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, sort } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     let query;
@@ -139,10 +139,17 @@ exports.getFAQsByCategory = async (req, res) => {
       query = { status: 'resolved', tags: tag };
     }
 
+    let sortOption = {};
+    if (sort === 'popular') {
+      sortOption = { upvotes: -1, createdAt: -1 };
+    } else {
+      sortOption = { createdAt: -1 };
+    }
+
     const [faqs, total] = await Promise.all([
       FAQ.find(query)
         .populate('createdBy', 'name')
-        .sort({ upvotes: -1, createdAt: -1 })
+        .sort(sortOption)
         .skip(skip)
         .limit(parseInt(limit)),
       FAQ.countDocuments(query)
@@ -241,7 +248,7 @@ exports.getCategoryContributors = async (req, res) => {
 
     // Populate user info
     const userIds = topResponders.map(r => r._id);
-    const users = await User.find({ _id: { $in: userIds }, status: 'active' })
+    const users = await User.find({ _id: { $in: userIds }, status: 'active', email: { $ne: 'ragbot@faqapp.local' } })
       .select('name reputation role')
       .lean();
 
@@ -264,7 +271,8 @@ exports.getCategoryContributors = async (req, res) => {
       const generalActive = await User.find({
         _id: { $nin: populatedIds },
         status: 'active',
-        role: 'user'
+        role: 'user',
+        email: { $ne: 'ragbot@faqapp.local' }
       })
       .sort({ reputation: -1 })
       .limit(3 - populated.length)

@@ -19,25 +19,57 @@ const storage = multer.diskStorage({
   }
 });
 
-// Accept only images
+// Allowed MIME types: images + PDF + Word documents
+const ALLOWED_MIMES = new Set([
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',                                                     // .doc
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document' // .docx
+]);
+
+// Allowed extensions (fallback check alongside MIME)
+const ALLOWED_EXT = /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx)$/i;
+
 const fileFilter = (req, file, cb) => {
-  const allowed = /jpeg|jpg|png|gif|webp/;
-  const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-  const mime = allowed.test(file.mimetype);
-  cb(null, ext && mime);
+  const extOk = ALLOWED_EXT.test(path.extname(file.originalname).toLowerCase());
+  const mimeOk = ALLOWED_MIMES.has(file.mimetype);
+  if (extOk || mimeOk) {
+    cb(null, true);
+  } else {
+    cb(new Error('Unsupported file type. Allowed: JPG, PNG, GIF, WebP, PDF, DOC, DOCX.'), false);
+  }
 };
 
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5 MB per image
+  limits: { fileSize: 10 * 1024 * 1024 } // 10 MB per file
 });
 
-// POST /api/upload — single image upload, returns { url }
-router.post('/', upload.single('image'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No image file provided' });
-  const url = `/uploads/${req.file.filename}`;
-  res.json({ url });
+// POST /api/upload — single file upload, returns { url, filename, mimetype }
+router.post('/', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file provided' });
+  res.json({
+    url: `/uploads/${req.file.filename}`,
+    filename: req.file.originalname,
+    mimetype: req.file.mimetype
+  });
+});
+
+// Handle multer errors (e.g. file too large, unsupported type)
+router.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(400).json({ error: 'File exceeds the 10 MB size limit.' });
+    }
+    return res.status(400).json({ error: err.message });
+  }
+  if (err) return res.status(400).json({ error: err.message });
+  next();
 });
 
 module.exports = router;
