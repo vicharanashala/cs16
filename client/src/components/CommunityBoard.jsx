@@ -48,7 +48,7 @@ export default function CommunityBoard() {
             onClick={() => setShowAll(!showAll)}
             className="text-xs font-semibold text-primary-600 dark:text-primary-400 hover:underline cursor-pointer focus:outline-none"
           >
-            {showAll ? 'Show Less' : 'View All Announcements'}
+            {showAll ? 'Show Less' : 'View All'}
           </button>
         )}
       </div>
@@ -63,14 +63,6 @@ export default function CommunityBoard() {
               onClick={() => setSelectedPin(pin)}
               className={`relative aspect-square rounded-2xl border ${cfg.border} ${cfg.bg} p-4 flex flex-col justify-between shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all cursor-pointer select-none`}
             >
-              {/* Type badge */}
-              <div className="flex items-center">
-                <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}>
-                  <span>{cfg.icon}</span>
-                  <span>{cfg.label}</span>
-                </span>
-              </div>
-
               {/* Title */}
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm leading-snug line-clamp-2 mt-2">
                 {pin.title}
@@ -109,12 +101,9 @@ export default function CommunityBoard() {
           >
             {/* Modal Header */}
             <div className="flex items-start justify-between gap-4">
-              <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-0.5 rounded-full ${typeConfig.announcement.badge}`}>
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                </svg>
-                <span>Announcement</span>
-              </span>
+              <div className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Announcement Details
+              </div>
               <button
                 onClick={() => setSelectedPin(null)}
                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg transition-colors p-1"

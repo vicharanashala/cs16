@@ -40,6 +40,20 @@ Traditional cohort education and support systems suffer from several core fricti
 
 ---
 
+## System Invariants
+System invariants are fundamental safety rules and constraints that the application guarantees to enforce at all times, across all database operations and state transitions:
+
+* **User Reputation Non-Negativity:** A user's reputation score can never fall below zero (`reputation >= 0`). Any action that would subtract points below zero is clamped to zero.
+* **Closed Query Integrity:** Once a query is transitioned to the `closed` state (e.g., after the creator accepts a volunteer's answer), it is permanently locked and cannot be re-opened (`status` cannot change from `closed`).
+* **Volunteer Allocation Boundary:** A volunteer responder can claim at most one active query at any time. A volunteer is blocked from claiming new queries until their current claim is resolved or released.
+* **Self-Claiming Restriction:** A volunteer user cannot claim or accept tasks on a query they originally created.
+* **Upvote Singularity:** A user can only submit exactly one upvote for a given answer to prevent vote inflation.
+* **Secure Credentials:** User passwords stored in the database must always be encrypted using a cryptographically secure hashing function (bcrypt) before persistence. Unhashed passwords must never be stored or exposed in API payloads.
+* **Unique Email Constraint:** No two user profiles can share the same email address.
+* **FAQ Quality Control:** A proposed query must pass quality validation (e.g. placeholder review) and admin approval before it is promoted to a permanent FAQ.
+
+---
+
 ## User Stories
 * **As an intern,** I want to search for internship certificate guidelines so that I can get immediate answers or find the existing thread.
 * **As an intern raising a query,** I want the system to warn me if my question is a duplicate, redirecting me to the answer so I don't waste time or lose reputation points.

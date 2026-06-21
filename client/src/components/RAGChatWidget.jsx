@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { saveChatSession } from '../services/api';
-import { motion, useDragControls } from 'framer-motion';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { marked } from 'marked';
 
 marked.setOptions({ breaks: true, gfm: true });
@@ -279,32 +279,40 @@ export default function RAGChatWidget() {
       {/* Full-viewport invisible div used as dragConstraints anchor for both elements */}
       <div ref={viewportRef} className="fixed inset-0 z-0 pointer-events-none" />
 
-      {/* ── Dialog ── */}
-      {dialogOpen && !isMinimised && (
-        <div className="fixed inset-0 z-50 pointer-events-none">
-          {/* Backdrop */}
-          <div
-            className="absolute inset-0 bg-black/20 pointer-events-auto"
-            onClick={closeDialog}
-          />
-
-          {/* Centering Wrapper Container */}
-          <div className={isLauncherExcludedPage ? "absolute inset-0 pointer-events-none" : "fixed inset-0 flex justify-center items-end pointer-events-none"}>
-            {/* Draggable dialog panel */}
+      <AnimatePresence>
+        {dialogOpen && !isMinimised && (
+          <div className="fixed inset-0 z-50 pointer-events-none">
+            {/* Backdrop */}
             <motion.div
-              drag
-              dragControls={dragControls}
-              dragListener={false}
-              dragMomentum={false}
-              dragElastic={0}
-              dragConstraints={viewportRef}
-              className={`${
-                isLauncherExcludedPage 
-                  ? "absolute bottom-24 right-6 w-[min(calc(100vw-2rem),24rem)]" 
-                  : "relative bottom-24 w-[min(calc(100vw-2rem),36rem)] mx-4"
-              } rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden pointer-events-auto`}
-              style={{ maxHeight: 'min(65vh, 560px)' }}
-            >
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0 bg-black/20 pointer-events-auto"
+              onClick={closeDialog}
+            />
+
+            {/* Centering Wrapper Container */}
+            <div className={isLauncherExcludedPage ? "absolute inset-0 pointer-events-none" : "fixed inset-0 flex justify-center items-end pointer-events-none"}>
+              {/* Draggable dialog panel */}
+              <motion.div
+                drag
+                dragControls={dragControls}
+                dragListener={false}
+                dragMomentum={false}
+                dragElastic={0}
+                dragConstraints={viewportRef}
+                initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 50, scale: 0.95 }}
+                transition={{ type: "spring", stiffness: 350, damping: 28 }}
+                className={`${
+                  isLauncherExcludedPage 
+                    ? "absolute bottom-24 right-6 w-[min(calc(100vw-2rem),24rem)]" 
+                    : "relative bottom-24 w-[min(calc(100vw-2rem),36rem)] mx-4"
+                } rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col overflow-hidden pointer-events-auto`}
+                style={{ maxHeight: 'min(65vh, 560px)' }}
+              >
               {/* Drag handle bar */}
               <div
                 onPointerDown={(e) => {
@@ -481,6 +489,7 @@ export default function RAGChatWidget() {
         </div>
       </div>
     )}
+      </AnimatePresence>
 
       {/* Viewport bottom gradient mask */}
       {!isLauncherExcludedPage && !isMinimised && !dialogOpen && (

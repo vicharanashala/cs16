@@ -186,13 +186,36 @@ async function seed(force = false) {
     console.log(`Inserted ${inserted.length} FAQs into database`);
 
     // Insert default community board pins
-    const announcementPin = await Pin.create({
-      type: 'announcement',
-      title: 'Grantha 2026 Summership is Live!',
-      content: 'Welcome all interns! Please make sure to check ViBe LMS daily for course announcements and progress score updates.',
-      pinnedBy: admin._id,
-      order: 0
-    });
+    await Pin.create([
+      {
+        type: 'announcement',
+        title: 'Grantha 2026 Summership is Live!',
+        content: 'Welcome all interns! Please make sure to check ViBe LMS daily for course announcements and progress score updates.',
+        pinnedBy: admin._id,
+        order: 0
+      },
+      {
+        type: 'announcement',
+        title: 'Submit Your Daily Logs Before 6:00 PM',
+        content: 'A quick reminder to all cohort interns: daily progress logs must be submitted in Markdown format before 6:00 PM every evening. Ensure you include your ticket IDs and task descriptions.',
+        pinnedBy: admin._id,
+        order: 1
+      },
+      {
+        type: 'announcement',
+        title: 'Scheduled Database Maintenance on Sunday',
+        content: 'The Grantha platform will undergo scheduled database maintenance and RAG cache optimization this Sunday, June 21, between 2:00 AM and 4:00 AM IST. Expect temporary service interruptions during this window.',
+        pinnedBy: admin._id,
+        order: 2
+      },
+      {
+        type: 'announcement',
+        title: 'Weekly Reputation Leaderboard Updates',
+        content: "Congratulations to the top contributors on this week's leaderboard! Vetting points and accepted answer scores have been synced. The weekly bonus reputation will be credited to top profiles by Friday midnight.",
+        pinnedBy: admin._id,
+        order: 3
+      }
+    ]);
     console.log('Created default community board pins');
 
     // ── Seed active forum queries and responses ────────────────────────────
